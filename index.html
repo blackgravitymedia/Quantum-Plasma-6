@@ -1,0 +1,2710 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Quantum Plasma 6 — Live Wallpaper</title>
+<style>
+    * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+        user-select: none;
+        -webkit-user-select: none;
+        -webkit-tap-highlight-color: transparent;
+    }
+    html, body {
+        width: 100%;
+        height: 100%;
+        background: #000;
+        font-family: Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        color: #fff;
+        overflow: hidden;
+    }
+    /* Full-Screen Native OpenGL ES 3.0 / WebGL2 Surface */
+    #glCanvas {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        display: block;
+        z-index: 1;
+        touch-action: none;
+    }
+    /* Root-Level Particle Explosion Overlay (Matches ParticleExplosion Composable) */
+    #explosionCanvas {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        pointer-events: none;
+        z-index: 50;
+    }
+    /* MainActivity Scrollable Column */
+    .dashboard-scroll {
+        position: relative;
+        z-index: 10;
+        width: 100%;
+        height: 100vh;
+        overflow-y: auto;
+        overflow-x: hidden;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 28px 20px 48px 20px;
+        pointer-events: none; /* Let background touches hit WebGL outside cards */
+    }
+    .dashboard-column {
+        width: 100%;
+        max-width: 440px;
+        display: flex;
+        flex-direction: column;
+        pointer-events: auto;
+    }
+    #titlePlaqueCanvas {
+        width: 100%;
+        height: 92px;
+        display: block;
+        margin-top: 8px;
+        margin-bottom: 14px;
+    }
+    /* Top Action Row: Guide & Rate App */
+    .top-btn-row {
+        display: flex;
+        gap: 16px;
+        width: 100%;
+        margin-bottom: 12px;
+    }
+    .top-pill-btn {
+        flex: 1;
+        height: 46px;
+        background: rgba(0, 0, 0, 0.80);
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        color: #fff;
+        font-weight: 700;
+        font-size: 12px;
+        cursor: pointer;
+        text-decoration: none;
+        transition: transform 0.1s;
+    }
+    .top-pill-btn:active { transform: scale(0.98); }
+    .top-pill-btn.guide-btn { border: 1px solid #00E5FF; }
+    .top-pill-btn.rate-btn { border: 1px solid #3DDC84; }
+
+    /* Pulsing Green Premium Unlock / Play Store CTA Button */
+    @keyframes greenPulse {
+        0% { box-shadow: 0 4px 12px rgba(61, 220, 132, 0.35); }
+        100% { box-shadow: 0 6px 28px rgba(61, 220, 132, 0.95); }
+    }
+    .premium-unlock-btn {
+        width: 100%;
+        height: 56px;
+        background: #3DDC84;
+        color: #000;
+        border: none;
+        border-radius: 12px;
+        font-weight: 900;
+        font-size: 17px;
+        letter-spacing: 0.5px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        margin-bottom: 16px;
+        cursor: pointer;
+        text-decoration: none;
+        animation: greenPulse 1.2s infinite alternate ease-in-out;
+    }
+
+    /* Main Translucent Dashboard Box with BlendMode.Clear Cutout Support */
+    .main-card-wrapper {
+        position: relative;
+        width: 100%;
+        border-radius: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.20);
+        padding: 20px 16px;
+    }
+    #cardBgCanvas {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        border-radius: 12px;
+        pointer-events: none;
+        z-index: 0;
+    }
+    .main-card-content {
+        position: relative;
+        z-index: 1;
+        width: 100%;
+    }
+
+    /* Dynamic Engine / Formula Banner */
+    .engine-banner {
+        width: 100%;
+        padding: 12px;
+        border-radius: 8px;
+        font-weight: 700;
+        font-size: 12px;
+        text-align: center;
+        margin-bottom: 12px;
+        display: none;
+    }
+
+    /* CollapsibleSection Header */
+    .collapsible-header {
+        width: 100%;
+        margin-top: 24px;
+        margin-bottom: 8px;
+        padding: 12px 16px;
+        border-radius: 8px;
+        background: linear-gradient(90deg, rgba(0, 229, 255, 0.25) 0%, rgba(0, 229, 255, 0.0) 100%);
+        border: 1.5px solid rgba(0, 229, 255, 0.80);
+        box-shadow: 0 4px 16px rgba(0, 229, 255, 0.28);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        cursor: pointer;
+    }
+    .collapsible-section:first-of-type .collapsible-header {
+        margin-top: 4px;
+    }
+    .collapsible-header span {
+        color: #fff;
+        font-weight: 800;
+        font-size: 14px;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        text-shadow: 2px 2px 4px #000;
+    }
+    .collapsible-body {
+        width: 100%;
+        padding-bottom: 8px;
+        overflow: hidden;
+    }
+    .collapsible-body.collapsed {
+        display: none;
+    }
+
+    /* Tier Labels in Quantum Engines */
+    .tier-label {
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 1px;
+        margin-bottom: 6px;
+        margin-top: 14px;
+    }
+    .tier-label.first { margin-top: 4px; }
+    .tier-free { color: #00E5FF; }
+    .tier-space { color: #FFCC00; }
+    .tier-formula { color: #E040FB; }
+
+    /* OldRadioModeButton (Exact 1:1 Compose Match) */
+    .radio-row {
+        display: flex;
+        gap: 8px;
+        width: 100%;
+        height: 56px;
+    }
+    .radio-row.short { height: 48px; }
+    .old-radio-btn {
+        flex: 1;
+        height: 100%;
+        border-radius: 6px;
+        background: linear-gradient(180deg, #4A4A4A 0%, #252525 100%);
+        border: 1px solid #444444;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.65);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        padding: 4px;
+        transition: all 0.12s ease;
+    }
+    .old-radio-btn .btn-title {
+        color: #AAAAAA;
+        font-weight: 800;
+        font-size: 11px;
+        letter-spacing: 0.8px;
+        text-transform: uppercase;
+        text-align: center;
+        line-height: 1.15;
+    }
+    .old-radio-btn .btn-sub {
+        color: rgba(170, 170, 170, 0.8);
+        font-weight: 700;
+        font-size: 9px;
+        text-align: center;
+        margin-top: 2px;
+    }
+    .old-radio-btn.selected {
+        background: linear-gradient(180deg, #0A0A0A 0%, #151515 100%);
+        border: 1px solid #000000;
+        box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.9);
+    }
+    .old-radio-btn.selected .btn-title {
+        color: #00E5FF;
+        text-shadow: 0 0 18px #00E5FF, 0 0 8px #00E5FF;
+    }
+    .old-radio-btn.selected .btn-sub {
+        color: rgba(0, 229, 255, 0.85);
+        text-shadow: 0 0 14px #00E5FF;
+    }
+
+    /* Section Subheaders */
+    .sub-heading {
+        font-size: 16px;
+        font-weight: 700;
+        color: #CCCCCC;
+        margin: 12px 0 8px 0;
+    }
+
+    /* PlasmaSlider & PlasmaDial Cards */
+    .control-card {
+        width: 100%;
+        background: rgba(0, 0, 0, 0.70);
+        border: 1px solid rgba(255, 255, 255, 0.20);
+        border-radius: 12px;
+        padding: 12px 16px;
+        margin: 6px 0;
+    }
+    .control-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 8px;
+    }
+    .control-title-wrap {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .control-title {
+        font-size: 15px;
+        font-weight: 700;
+        color: #E0E0E0;
+        letter-spacing: 0.4px;
+    }
+    .info-icon {
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: rgba(0, 229, 255, 0.18);
+        border: 1.2px solid rgba(0, 229, 255, 0.75);
+        color: #00E5FF;
+        font-size: 11px;
+        font-weight: 900;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+    }
+    .control-val {
+        font-size: 15px;
+        font-weight: 400;
+        color: #00E5FF;
+    }
+
+    /* Custom Styled Range Sliders Matching Compose Slider */
+    input[type="range"].plasma-range {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 100%;
+        height: 6px;
+        background: rgba(255, 255, 255, 0.26);
+        border-radius: 3px;
+        outline: none;
+        cursor: pointer;
+    }
+    input[type="range"].plasma-range::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: #FFFFFF;
+        box-shadow: 0 0 10px rgba(0, 229, 255, 0.8);
+        cursor: pointer;
+    }
+
+    /* PlasmaToggle Row */
+    .toggle-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 8px 0;
+    }
+    .switch {
+        position: relative;
+        display: inline-block;
+        width: 48px;
+        height: 26px;
+    }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .switch-slider {
+        position: absolute;
+        cursor: pointer;
+        inset: 0;
+        background-color: #333;
+        border: 1px solid #666;
+        transition: 0.2s;
+        border-radius: 26px;
+    }
+    .switch-slider:before {
+        position: absolute;
+        content: "";
+        height: 18px;
+        width: 18px;
+        left: 3px;
+        bottom: 3px;
+        background-color: #aaa;
+        transition: 0.2s;
+        border-radius: 50%;
+    }
+    .switch input:checked + .switch-slider {
+        background-color: rgba(0, 229, 255, 0.35);
+        border-color: #00E5FF;
+    }
+    .switch input:checked + .switch-slider:before {
+        transform: translateX(22px);
+        background-color: #00E5FF;
+        box-shadow: 0 0 8px #00E5FF;
+    }
+
+    /* PlasmaDial 360 Degree Canvas Container */
+    .dial-wrapper {
+        position: relative;
+        width: 160px;
+        height: 160px;
+        margin: 8px auto 0 auto;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        touch-action: none;
+        cursor: grab;
+    }
+    .dial-wrapper:active { cursor: grabbing; }
+    .dial-readout {
+        position: absolute;
+        font-size: 26px;
+        font-weight: 800;
+        color: #00E5FF;
+        pointer-events: none;
+    }
+
+    /* LivePreviewCutout (Punches a transparent window right through the card to the shader) */
+    .live-preview-cutout {
+        width: 100%;
+        height: 84px;
+        margin: 16px 0;
+        border-radius: 12px;
+        border: 1px solid rgba(0, 229, 255, 0.55);
+        background: transparent;
+        cursor: crosshair;
+        touch-action: none;
+        position: relative;
+    }
+    .live-preview-cutout::after {
+        content: "LIVE INTERACTIVE PREVIEW — TOUCH / DRAG HERE";
+        position: absolute;
+        bottom: 6px;
+        right: 10px;
+        font-size: 9px;
+        font-weight: 700;
+        letter-spacing: 0.6px;
+        color: rgba(0, 229, 255, 0.55);
+        pointer-events: none;
+    }
+
+    /* Warning Box in Lighting */
+    .warning-box {
+        width: 100%;
+        margin-bottom: 12px;
+        padding: 12px;
+        border-radius: 8px;
+        background: rgba(255, 0, 0, 0.20);
+        border: 1px solid rgba(255, 0, 0, 0.66);
+        color: #FF6666;
+        font-weight: 700;
+        font-size: 12px;
+        text-align: center;
+    }
+
+    /* Apply Wallpaper Bottom Button */
+    .apply-wallpaper-btn {
+        width: 100%;
+        height: 60px;
+        margin-top: 28px;
+        background: rgba(0, 229, 255, 0.85);
+        color: #000;
+        border: none;
+        border-radius: 30px;
+        font-weight: 900;
+        font-size: 20px;
+        cursor: pointer;
+        text-decoration: none;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 6px 24px rgba(0, 229, 255, 0.4);
+    }
+
+    /* Floating Fullscreen / Hide UI Toggle so visitors can admire the full wallpaper */
+    .view-mode-fab {
+        position: fixed;
+        bottom: 18px;
+        right: 18px;
+        z-index: 40;
+        background: rgba(0, 0, 0, 0.85);
+        border: 1.5px solid #00E5FF;
+        color: #00E5FF;
+        padding: 10px 16px;
+        border-radius: 24px;
+        font-weight: 800;
+        font-size: 12px;
+        letter-spacing: 0.6px;
+        cursor: pointer;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.8);
+    }
+
+    /* Help / Guide Modal Dialog */
+    .modal-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.72);
+        z-index: 100;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+    }
+    .modal-card {
+        background: #1E1E1E;
+        border: 1px solid #333;
+        border-radius: 16px;
+        max-width: 380px;
+        width: 100%;
+        padding: 22px;
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.9);
+    }
+    .modal-title {
+        font-size: 19px;
+        font-weight: 800;
+        color: #fff;
+        margin-bottom: 12px;
+    }
+    .modal-body {
+        font-size: 14px;
+        color: #CCCCCC;
+        line-height: 1.5;
+        margin-bottom: 18px;
+    }
+    .modal-close {
+        background: none;
+        border: none;
+        color: #00E5FF;
+        font-weight: 800;
+        font-size: 15px;
+        float: right;
+        cursor: pointer;
+    }
+</style>
+</head>
+<body>
+
+<canvas id="glCanvas"></canvas>
+<canvas id="explosionCanvas"></canvas>
+
+<button class="view-mode-fab" id="toggleUiFab">HIDE UI (FULLSCREEN TOUCH)</button>
+
+<div class="dashboard-scroll" id="dashboardScroll">
+    <div class="dashboard-column">
+
+        <!-- Exact 2D Canvas Port of QuantumEnergyTitle() from MainActivity.kt -->
+        <canvas id="titlePlaqueCanvas" width="800" height="184"></canvas>
+
+        <!-- Guide & Rate App Buttons -->
+        <div class="top-btn-row">
+            <div class="top-pill-btn guide-btn" id="guideBtn">
+                <span class="info-icon">i</span>
+                <span>Guide</span>
+            </div>
+            <a class="top-pill-btn rate-btn" href="https://play.google.com/store/apps/details?id=com.blackgravity.quantumplasma" target="_blank" rel="noopener">
+                <span style="color:#3DDC84;font-size:15px;">★</span>
+                <span>Google Play</span>
+            </a>
+        </div>
+
+        <!-- Pulsing Green CTA Button -->
+        <a class="premium-unlock-btn" href="https://play.google.com/store/apps/details?id=com.blackgravity.quantumplasma" target="_blank" rel="noopener">
+            <span>GET QUANTUM PLASMA 6 ON GOOGLE PLAY</span>
+        </a>
+
+        <!-- Main Translucent Dashboard Box -->
+        <div class="main-card-wrapper" id="mainCardWrapper">
+            <canvas id="cardBgCanvas"></canvas>
+
+            <div class="main-card-content">
+                <div class="engine-banner" id="engineBanner"></div>
+
+                <!-- MENU 1: QUANTUM ENGINES (3x3 LABELED TIERS) -->
+                <div class="collapsible-section">
+                    <div class="collapsible-header" data-target="secEngines">
+                        <span>QUANTUM ENGINES</span>
+                        <span class="chevron">▲</span>
+                    </div>
+                    <div class="collapsible-body" id="secEngines">
+                        <div class="tier-label first tier-free">FREE — FLUID & MOTION</div>
+                        <div class="radio-row">
+                            <div class="old-radio-btn" data-mode="0">
+                                <span class="btn-title">PLASMA</span>
+                                <span class="btn-sub">Electric Flow</span>
+                            </div>
+                            <div class="old-radio-btn" data-mode="1">
+                                <span class="btn-title">LIQUID</span>
+                                <span class="btn-sub">Mercury Waves</span>
+                            </div>
+                            <div class="old-radio-btn" data-mode="2">
+                                <span class="btn-title">VORTEX</span>
+                                <span class="btn-sub">3D Whirlpool</span>
+                            </div>
+                        </div>
+
+                        <div class="tier-label tier-space">PREMIUM — DEEP SPACE</div>
+                        <div class="radio-row">
+                            <div class="old-radio-btn" data-mode="3">
+                                <span class="btn-title">ANTIMATTER</span>
+                                <span class="btn-sub">Black Hole</span>
+                            </div>
+                            <div class="old-radio-btn" data-mode="4">
+                                <span class="btn-title">WARP TUNNEL</span>
+                                <span class="btn-sub">Wormhole</span>
+                            </div>
+                            <div class="old-radio-btn" data-mode="5">
+                                <span class="btn-title">ENTANGLEMENT</span>
+                                <span class="btn-sub">Mirror Matrix</span>
+                            </div>
+                        </div>
+
+                        <div class="tier-label tier-formula">PHYSICS FORMULAS — PRO</div>
+                        <div class="radio-row">
+                            <div class="old-radio-btn selected" data-mode="6">
+                                <span class="btn-title">FUSION CORE</span>
+                                <span class="btn-sub">Boltzmann</span>
+                            </div>
+                            <div class="old-radio-btn" data-mode="7">
+                                <span class="btn-title">AURORA</span>
+                                <span class="btn-sub">Alfvén Waves</span>
+                            </div>
+                            <div class="old-radio-btn" data-mode="8">
+                                <span class="btn-title">REACTOR</span>
+                                <span class="btn-sub">Cherenkov</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- MENU 2: PRESETS & COMMUNITY HUB -->
+                <div class="collapsible-section">
+                    <div class="collapsible-header" data-target="secPresets">
+                        <span>PRESETS & COMMUNITY HUB</span>
+                        <span class="chevron">▼</span>
+                    </div>
+                    <div class="collapsible-body collapsed" id="secPresets">
+                        <div class="sub-heading">Color Presets</div>
+                        <div class="radio-row short" id="colorPresetsRow"></div>
+                        <div class="live-preview-cutout"></div>
+                    </div>
+                </div>
+
+                <!-- MENU 3: PHYSICS & MOVEMENT -->
+                <div class="collapsible-section">
+                    <div class="collapsible-header" data-target="secPhysics">
+                        <span>PHYSICS & MOVEMENT</span>
+                        <span class="chevron">▼</span>
+                    </div>
+                    <div class="collapsible-body collapsed" id="secPhysics">
+                        <div id="topologyBlock">
+                            <div class="sub-heading" id="topologyTitle">Core Reactor Topology</div>
+                            <div class="radio-row short" id="topologyRow"></div>
+                        </div>
+
+                        <!-- Warp Direction Toggle (Mode 4 Only) -->
+                        <div class="toggle-row" id="warpDirRow" style="display:none; margin-top:8px;">
+                            <div class="control-title-wrap">
+                                <span class="control-title" id="warpDirLabel">Warp Direction: Backward</span>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="warpForwardToggle">
+                                <span class="switch-slider"></span>
+                            </label>
+                        </div>
+
+                        <div id="physicsSlidersTop"></div>
+
+                        <!-- 360° Interactive PlasmaDial -->
+                        <div class="control-card">
+                            <div class="control-header">
+                                <div class="control-title-wrap">
+                                    <span class="control-title">Flow Direction</span>
+                                    <span class="info-icon" data-help-title="Flow Direction" data-help-body="Changes the gravitational pull, geomagnetic field tilt, or primary flowing direction of the simulation.">?</span>
+                                </div>
+                            </div>
+                            <div class="dial-wrapper" id="flowDialWrap">
+                                <canvas id="flowDialCanvas" width="160" height="160"></canvas>
+                                <div class="dial-readout" id="flowDialText">35°</div>
+                            </div>
+                        </div>
+
+                        <div class="live-preview-cutout"></div>
+
+                        <div id="physicsSlidersBottom"></div>
+
+                        <div class="live-preview-cutout"></div>
+                    </div>
+                </div>
+
+                <!-- MENU 4: QUALITY & ANTI-ALIASING -->
+                <div class="collapsible-section">
+                    <div class="collapsible-header" data-target="secQuality">
+                        <span>QUALITY & ANTI-ALIASING</span>
+                        <span class="chevron">▼</span>
+                    </div>
+                    <div class="collapsible-body collapsed" id="secQuality">
+                        <div class="toggle-row">
+                            <div class="control-title-wrap">
+                                <span class="control-title">Smooth SDF Edges (AA)</span>
+                                <span class="info-icon" data-help-title="Smooth SDF Edges (AA)" data-help-body="Mathematically widens the blending threshold of hard 3D shapes to remove jagged pixel edges.">?</span>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="aaToggle" checked>
+                                <span class="switch-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- MENU 5: LIGHTING -->
+                <div class="collapsible-section">
+                    <div class="collapsible-header" data-target="secLighting">
+                        <span>LIGHTING</span>
+                        <span class="chevron">▼</span>
+                    </div>
+                    <div class="collapsible-body collapsed" id="secLighting">
+                        <div class="warning-box">
+                            WARNING: Post-processing features significantly increase battery usage and GPU load.
+                        </div>
+                        <div class="toggle-row">
+                            <div class="control-title-wrap">
+                                <span class="control-title">Enable Optical Bloom</span>
+                                <span class="info-icon" data-help-title="Enable Optical Bloom" data-help-body="Adds a glowing, optical bleed effect to the brightest areas of the fluid.">?</span>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="bloomToggle">
+                                <span class="switch-slider"></span>
+                            </label>
+                        </div>
+                        <div id="lightingModeSpecific"></div>
+                    </div>
+                </div>
+
+                <!-- MENU 6: PREMIUM ENHANCEMENTS -->
+                <div class="collapsible-section">
+                    <div class="collapsible-header" data-target="secEnhancements">
+                        <span>PREMIUM ENHANCEMENTS</span>
+                        <span class="chevron">▼</span>
+                    </div>
+                    <div class="collapsible-body collapsed" id="secEnhancements">
+                        <div class="toggle-row" id="shatterToggleRow">
+                            <div class="control-title-wrap">
+                                <span class="control-title" id="shatterToggleLabel">High-Frequency Shatter</span>
+                                <span class="info-icon" data-help-title="High-Frequency Shatter" data-help-body="Applies a high-frequency quantum interference pattern across the field lines.">?</span>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="shatterToggle">
+                                <span class="switch-slider"></span>
+                            </label>
+                        </div>
+                        <div class="toggle-row" id="shiftToggleRow">
+                            <div class="control-title-wrap">
+                                <span class="control-title" id="shiftToggleLabel">Spectral Chromatic Shift</span>
+                                <span class="info-icon" data-help-title="Spectral Chromatic Shift" data-help-body="Splits the quantum field and contours into prismatic RGB spectrums.">?</span>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="shiftToggle" checked>
+                                <span class="switch-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- MENU 7: COLOR ENGINEERING -->
+                <div class="collapsible-section">
+                    <div class="collapsible-header" data-target="secColors">
+                        <span>COLOR ENGINEERING</span>
+                        <span class="chevron">▼</span>
+                    </div>
+                    <div class="collapsible-body collapsed" id="secColors">
+                        <div class="toggle-row">
+                            <div class="control-title-wrap">
+                                <span class="control-title">Enable Color Cycle</span>
+                                <span class="info-icon" data-help-title="Enable Color Cycle" data-help-body="Automatically cycles the fluid through the entire color spectrum over time.">?</span>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="colorCycleToggle">
+                                <span class="switch-slider"></span>
+                            </label>
+                        </div>
+                        <div id="colorEngineeringBody"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <a class="apply-wallpaper-btn" href="https://play.google.com/store/apps/details?id=com.blackgravity.quantumplasma" target="_blank" rel="noopener">
+            Apply Wallpaper (Google Play)
+        </a>
+    </div>
+</div>
+
+<!-- Contextual Help / Guide Modal -->
+<div class="modal-backdrop" id="helpModal">
+    <div class="modal-card">
+        <div class="modal-title" id="modalTitle">Quantum Plasma Guide</div>
+        <div class="modal-body" id="modalBody"></div>
+        <button class="modal-close" id="modalCloseBtn">Got it!</button>
+    </div>
+</div>
+
+<script>
+// ==============================================================================
+// === 1. EXACT MODE BLUEPRINTS FROM MainActivity.kt ============================
+// ==============================================================================
+const MODE_BLUEPRINTS = {
+    0: {
+        flowAngle: { def: 54.0, min: 0, max: 360 },
+        nebulaIntensity: { def: 0.0, min: 0, max: 3.0 },
+        nebulaSmoothness: { def: 0.0, min: 0, max: 1.0 },
+        energyIntensity: { def: 0.35, min: 0, max: 1.0 },
+        energySmoothness: { def: 0.25, min: 0, max: 1.0 },
+        touchIntensity: { def: 0.55, min: 0, max: 1.0 },
+        touchRadius: { def: 0.30, min: 0, max: 1.0 },
+        speed: { def: 0.40, min: 0, max: 1.0 },
+        complexity: { def: 3.06, min: 1, max: 10.0 },
+        cycleEnabled: 0, cycleNeb: 0.1, cycleNrg: 0.15,
+        nebR: 0.53, nebG: 0.20, nebB: 0.64,
+        nrgR: 0.24, nrgG: 0.39, nrgB: 1.0,
+        tchR: 1.0, tchG: 0.4, tchB: 0.0,
+        baseShape: 0, aa: 0, bloom: 0, shift: 0, shatter: 0,
+        presets: [
+            { name: "Electric", nebR: 0, nebG: 0, nebB: 0, nrgR: 0, nrgG: 0.39, nrgB: 0.90, nebInt: 0 },
+            { name: "Pink Choco", nebR: 0.59, nebG: 0.28, nebB: 0.25, nrgR: 1.0, nrgG: 0.18, nrgB: 0.85, nebInt: 1.20 },
+            { name: "Radioactive", nebR: 0, nebG: 0.61, nebB: 0.34, nrgR: 0, nrgG: 0.52, nrgB: 0, nebInt: 1.64 }
+        ]
+    },
+    1: {
+        flowAngle: { def: 118.8, min: 0, max: 360 },
+        nebulaIntensity: { def: 0.97, min: 0, max: 2.0 },
+        nebulaSmoothness: { def: 0.44, min: 0, max: 1.0 },
+        energyIntensity: { def: 0.28, min: 0, max: 3.0 },
+        energySmoothness: { def: 0.94, min: 0, max: 1.0 },
+        touchIntensity: { def: 1.95, min: 0, max: 2.0 },
+        touchRadius: { def: 0.22, min: 0, max: 1.0 },
+        speed: { def: 0.13, min: 0, max: 1.0 },
+        complexity: { def: 6.14, min: 1, max: 10.0 },
+        cycleEnabled: 0, cycleNeb: 0.1, cycleNrg: 0.15,
+        nebR: 0.21, nebG: 0.17, nebB: 0.52,
+        nrgR: 0.53, nrgG: 0.52, nrgB: 0.51,
+        tchR: 1.0, tchG: 0.4, tchB: 0.0,
+        baseShape: 0, aa: 0, bloom: 0, shift: 0, shatter: 0, liquidGlow: 1, iridescence: 0,
+        presets: [
+            { name: "Oil", nebR: 0.20, nebG: 0.20, nebB: 0.20, nrgR: 0.53, nrgG: 0.52, nrgB: 0.51 },
+            { name: "October", nebR: 1.0, nebG: 0.33, nebB: 0, nrgR: 0, nrgG: 0.62, nrgB: 0 },
+            { name: "Purple Haze", nebR: 0.49, nebG: 0.10, nebB: 0.73, nrgR: 0.15, nrgG: 0.22, nrgB: 0.60 }
+        ]
+    },
+    2: {
+        flowAngle: { def: 50.0, min: 0, max: 360 },
+        nebulaIntensity: { def: 2.15, min: 0, max: 3.0 },
+        nebulaSmoothness: { def: 0.17, min: 0, max: 1.0 },
+        energyIntensity: { def: 2.46, min: 0, max: 3.0 },
+        energySmoothness: { def: 0.30, min: 0, max: 1.0 },
+        touchIntensity: { def: 1.01, min: 0, max: 2.0 },
+        touchRadius: { def: 0.25, min: 0, max: 1.0 },
+        speed: { def: 0.08, min: 0, max: 0.5 },
+        complexity: { def: 5.0, min: 1, max: 10.0 },
+        cycleEnabled: 0, cycleNeb: 0.1, cycleNrg: 0.15,
+        nebR: 1.0, nebG: 0.20, nebB: 0.0,
+        nrgR: 1.0, nrgG: 0.28, nrgB: 0.03,
+        tchR: 1.0, tchG: 0.4, tchB: 0.0,
+        baseShape: 0, aa: 0, bloom: 0, shift: 0, shatter: 0, glassCore: 1, discHighlight: 0, lightAngle: 135.0, vortexBump: 0.0, vortexCoreType: 0,
+        presets: [
+            { name: "Synthwave", nebR: 0.41, nebG: 0.36, nebB: 0.68, nrgR: 0.20, nrgG: 0, nrgB: 1.0 },
+            { name: "Portal Green", nebR: 0.12, nebG: 0.74, nebB: 0.15, nrgR: 0, nrgG: 0.14, nrgB: 0.16 },
+            { name: "Noir", nebR: 0.16, nebG: 0.16, nebB: 0.16, nrgR: 0.16, nrgG: 0.18, nrgB: 0.18 }
+        ]
+    },
+    3: {
+        flowAngle: { def: 90.0, min: 0, max: 360 },
+        nebulaIntensity: { def: 2.0, min: 0, max: 4.0 },
+        nebulaSmoothness: { def: 0.5, min: 0, max: 1.0 },
+        energyIntensity: { def: 2.5, min: 0, max: 5.0 },
+        energySmoothness: { def: 0.5, min: 0, max: 1.0 },
+        touchIntensity: { def: 1.5, min: 0, max: 2.0 },
+        touchRadius: { def: 0.3, min: 0, max: 1.0 },
+        speed: { def: 0.4, min: 0, max: 1.0 },
+        complexity: { def: 5.0, min: 1, max: 10.0 },
+        cycleEnabled: 0, cycleNeb: 0.1, cycleNrg: 0.15,
+        nebR: 0.15, nebG: 0.0, nebB: 0.05,
+        nrgR: 0.0, nrgG: 0.8, nrgB: 1.0,
+        tchR: 1.0, tchG: 0.4, tchB: 0.0,
+        baseShape: 0, aa: 0, bloom: 0, shift: 0, shatter: 0,
+        presets: [
+            { name: "Celestial Jet", nebR: 0.15, nebG: 0.0, nebB: 0.05, nrgR: 0.0, nrgG: 0.8, nrgB: 1.0 },
+            { name: "Hellfire", nebR: 0.2, nebG: 0.0, nebB: 0.0, nrgR: 1.0, nrgG: 0.4, nrgB: 0.0 },
+            { name: "Deep Void", nebR: 0.0, nebG: 0.05, nebB: 0.1, nrgR: 0.6, nrgG: 0.0, nrgB: 1.0 }
+        ]
+    },
+    4: {
+        flowAngle: { def: 224.83191, min: 0, max: 360 },
+        nebulaIntensity: { def: 0.81296957, min: 0, max: 2.4 },
+        nebulaSmoothness: { def: 0.3289696, min: 0, max: 1.0 },
+        energyIntensity: { def: 0.29425073, min: 0, max: 1.25 },
+        energySmoothness: { def: 0.0, min: 0, max: 1.0 },
+        touchIntensity: { def: 0.42650518, min: 0, max: 2.0 },
+        touchRadius: { def: 0.11484224, min: 0, max: 1.0 },
+        speed: { def: 0.058376458, min: 0, max: 0.5 },
+        complexity: { def: 2.7373009, min: 1, max: 10.0 },
+        cycleEnabled: 1, cycleNeb: 0.021377217, cycleNrg: 0.044056606,
+        nebR: 0.5, nebG: 0.08522069, nebB: 0.0,
+        nrgR: 0.0, nrgG: 0.12807673, nrgB: 0.20995219,
+        tchR: 0.7399297, tchG: 0.0, tchB: 1.0,
+        baseShape: 1, aa: 1, bloom: 1, shift: 1, shatter: 0,
+        presets: [
+            { name: "Transwarp", nebR: 0.5, nebG: 0.08522069, nebB: 0.0, nrgR: 0.0, nrgG: 0.12807673, nrgB: 0.20995219 },
+            { name: "Collider", nebR: 0.5, nebG: 0.0, nebB: 1.0, nrgR: 0.0, nrgG: 1.0, nrgB: 0.7 },
+            { name: "Psychedelia", nebR: 1.0, nebG: 0.2, nebB: 0.0, nrgR: 0.1, nrgG: 1.0, nrgB: 0.2 }
+        ]
+    },
+    5: {
+        flowAngle: { def: 45.0, min: 0, max: 360 },
+        nebulaIntensity: { def: 1.8, min: 0, max: 4.0 },
+        nebulaSmoothness: { def: 0.4, min: 0, max: 1.0 },
+        energyIntensity: { def: 3.0, min: 0, max: 5.0 },
+        energySmoothness: { def: 0.5, min: 0, max: 1.0 },
+        touchIntensity: { def: 1.4, min: 0, max: 2.0 },
+        touchRadius: { def: 0.5, min: 0, max: 1.0 },
+        speed: { def: 0.35, min: 0, max: 1.0 },
+        complexity: { def: 6.0, min: 1, max: 10.0 },
+        cycleEnabled: 0, cycleNeb: 0.1, cycleNrg: 0.15,
+        nebR: 0.25, nebG: 0.08, nebB: 0.75,
+        nrgR: 1.0, nrgG: 0.25, nrgB: 0.65,
+        tchR: 0.0, tchG: 0.95, tchB: 1.0,
+        baseShape: 0, aa: 0, bloom: 0, shift: 0, shatter: 0,
+        presets: [
+            { name: "Prism Matrix", nebR: 0.25, nebG: 0.08, nebB: 0.75, nrgR: 1.0, nrgG: 0.25, nrgB: 0.65 },
+            { name: "Spooky Action", nebR: 0.05, nebG: 0.2, nebB: 0.45, nrgR: 0.0, nrgG: 1.0, nrgB: 0.55 },
+            { name: "EPR Paradox", nebR: 0.4, nebG: 0.0, nebB: 0.55, nrgR: 0.0, nrgG: 0.85, nrgB: 1.0 }
+        ]
+    },
+    6: {
+        flowAngle: { def: 35.0, min: 0, max: 360 },
+        nebulaIntensity: { def: 1.15, min: 0, max: 2.5 },
+        nebulaSmoothness: { def: 0.45, min: 0, max: 1.0 },
+        energyIntensity: { def: 1.10, min: 0, max: 2.2 },
+        energySmoothness: { def: 0.55, min: 0, max: 1.0 },
+        touchIntensity: { def: 1.35, min: 0, max: 2.0 },
+        touchRadius: { def: 0.35, min: 0, max: 1.0 },
+        speed: { def: 0.18, min: 0, max: 0.6 },
+        complexity: { def: 5.2, min: 1, max: 10.0 },
+        cycleEnabled: 0, cycleNeb: 0.03, cycleNrg: 0.05,
+        nebR: 0.22, nebG: 0.05, nebB: 0.55,
+        nrgR: 0.0, nrgG: 0.90, nrgB: 1.0,
+        tchR: 1.0, tchG: 0.68, tchB: 0.10,
+        baseShape: 0, aa: 1, bloom: 0, shift: 1, shatter: 0, teslaArc: 1, teslaArcInt: 1.0,
+        presets: [
+            { name: "ITER Tokamak", nebR: 0.22, nebG: 0.05, nebB: 0.55, nrgR: 0.0, nrgG: 0.90, nrgB: 1.0, tchR: 1.0, tchG: 0.68, tchB: 0.10 },
+            { name: "Stellarator", nebR: 0.02, nebG: 0.24, nebB: 0.32, nrgR: 1.0, nrgG: 0.08, nrgB: 0.52, tchR: 0.0, tchG: 1.0, tchB: 0.65 },
+            { name: "Cherenkov Core", nebR: 0.04, nebG: 0.12, nebB: 0.45, nrgR: 0.0, nrgG: 0.58, nrgB: 1.0, tchR: 0.78, tchG: 0.25, tchB: 1.0 }
+        ]
+    },
+    7: {
+        flowAngle: { def: 185.0, min: 0, max: 360 },
+        nebulaIntensity: { def: 1.35, min: 0, max: 2.5 },
+        nebulaSmoothness: { def: 0.42, min: 0, max: 1.0 },
+        energyIntensity: { def: 1.40, min: 0, max: 2.2 },
+        energySmoothness: { def: 0.55, min: 0, max: 1.0 },
+        touchIntensity: { def: 1.40, min: 0, max: 2.0 },
+        touchRadius: { def: 0.38, min: 0, max: 1.0 },
+        speed: { def: 0.20, min: 0, max: 0.6 },
+        complexity: { def: 5.5, min: 1, max: 10.0 },
+        cycleEnabled: 0, cycleNeb: 0.03, cycleNrg: 0.05,
+        nebR: 0.38, nebG: 0.05, nebB: 0.85,
+        nrgR: 0.0, nrgG: 0.96, nrgB: 0.52,
+        tchR: 1.0, tchG: 0.12, tchB: 0.58,
+        baseShape: 0, aa: 1, bloom: 0, shift: 1, shatter: 0,
+        presets: [
+            { name: "Aurora Borealis", nebR: 0.38, nebG: 0.05, nebB: 0.85, nrgR: 0.0, nrgG: 0.96, nrgB: 0.52, tchR: 1.0, tchG: 0.12, tchB: 0.58 },
+            { name: "Solar Substorm", nebR: 0.08, nebG: 0.22, nebB: 0.88, nrgR: 0.0, nrgG: 0.90, nrgB: 1.0, tchR: 1.0, tchG: 0.65, tchB: 0.10 },
+            { name: "STEVE & Fence", nebR: 0.78, nebG: 0.12, nebB: 0.95, nrgR: 0.05, nrgG: 1.0, nrgB: 0.38, tchR: 1.0, tchG: 0.45, tchB: 0.88 }
+        ]
+    },
+    8: {
+        flowAngle: { def: 90.0, min: 0, max: 360 },
+        nebulaIntensity: { def: 1.35, min: 0, max: 2.5 },
+        nebulaSmoothness: { def: 0.45, min: 0, max: 1.0 },
+        energyIntensity: { def: 1.35, min: 0, max: 2.2 },
+        energySmoothness: { def: 0.55, min: 0, max: 1.0 },
+        touchIntensity: { def: 1.40, min: 0, max: 2.0 },
+        touchRadius: { def: 0.38, min: 0, max: 1.0 },
+        speed: { def: 0.18, min: 0, max: 0.6 },
+        complexity: { def: 5.5, min: 1, max: 10.0 },
+        cycleEnabled: 0, cycleNeb: 0.03, cycleNrg: 0.05,
+        nebR: 0.02, nebG: 0.18, nebB: 0.58,
+        nrgR: 0.0, nrgG: 0.88, nrgB: 1.0,
+        tchR: 0.52, tchG: 0.25, tchB: 1.0,
+        baseShape: 0, aa: 1, bloom: 0, shift: 1, shatter: 0,
+        presets: [
+            { name: "Reactor Pool", nebR: 0.02, nebG: 0.18, nebB: 0.58, nrgR: 0.0, nrgG: 0.88, nrgB: 1.0, tchR: 0.52, tchG: 0.25, tchB: 1.0 },
+            { name: "Frank-Tamm UV", nebR: 0.16, nebG: 0.04, nebB: 0.62, nrgR: 0.0, nrgG: 0.96, nrgB: 1.0, tchR: 0.0, tchG: 1.0, tchB: 0.75 },
+            { name: "Scram Core", nebR: 0.04, nebG: 0.26, nebB: 0.45, nrgR: 0.0, nrgG: 0.92, nrgB: 1.0, tchR: 1.0, tchG: 0.55, tchB: 0.10 }
+        ]
+    }
+};
+
+// Per-Mode Live State Store (Mimics SharedPreferences)
+const modeState = {};
+for (let m = 0; m <= 8; m++) {
+    const bp = MODE_BLUEPRINTS[m];
+    modeState[m] = {
+        flowAngle: bp.flowAngle.def,
+        nebulaIntensity: bp.nebulaIntensity.def,
+        nebulaSmoothness: bp.nebulaSmoothness.def,
+        energyIntensity: bp.energyIntensity.def,
+        energySmoothness: bp.energySmoothness.def,
+        touchIntensity: bp.touchIntensity.def,
+        touchRadius: bp.touchRadius.def,
+        speed: bp.speed.def,
+        complexity: bp.complexity.def,
+        cycleEnabled: bp.cycleEnabled,
+        cycleNeb: bp.cycleNeb,
+        cycleNrg: bp.cycleNrg,
+        nebR: bp.nebR, nebG: bp.nebG, nebB: bp.nebB,
+        nrgR: bp.nrgR, nrgG: bp.nrgG, nrgB: bp.nrgB,
+        tchR: bp.tchR, tchG: bp.tchG, tchB: bp.tchB,
+        baseShape: bp.baseShape,
+        aa: bp.aa,
+        bloom: bp.bloom,
+        shift: bp.shift,
+        shatter: bp.shatter,
+        liquidGlow: bp.liquidGlow ?? 1,
+        iridescence: bp.iridescence ?? 0,
+        glassCore: bp.glassCore ?? 1,
+        discHighlight: bp.discHighlight ?? 0,
+        lightAngle: bp.lightAngle ?? 135.0,
+        vortexBump: bp.vortexBump ?? 0.0,
+        vortexCoreType: bp.vortexCoreType ?? 0,
+        teslaArc: bp.teslaArc ?? 1,
+        teslaArcInt: bp.teslaArcInt ?? 1.0
+    };
+}
+
+let activeEngineMode = 6;
+
+// ==============================================================================
+// === 2. EXACT PORT OF QuantumEnergyTitle() & buildSciFiGlyphPath ==============
+// ==============================================================================
+const titleCanvas = document.getElementById('titlePlaqueCanvas');
+const tCtx = titleCanvas.getContext('2d');
+
+function traceSciFiGlyphPath(ctx, text, startX, topY, charW, charH, spacing) {
+    let cx = startX;
+    ctx.beginPath();
+    for (const ch of text) {
+        if (ch === ' ') {
+            cx += charW * 0.55 + spacing;
+            continue;
+        }
+        const x0 = cx, x1 = cx + charW, xm = cx + charW * 0.5;
+        const y0 = topY, y1 = topY + charH, ym = topY + charH * 0.5;
+        const cutX = charW * 0.18, cutY = charH * 0.18;
+        switch (ch) {
+            case 'Q':
+                ctx.moveTo(x0, y0 + cutY); ctx.lineTo(x0 + cutX, y0); ctx.lineTo(x1 - cutX, y0);
+                ctx.lineTo(x1, y0 + cutY); ctx.lineTo(x1, y1 - cutY); ctx.lineTo(x1 - cutX, y1);
+                ctx.lineTo(x0 + cutX, y1); ctx.lineTo(x0, y1 - cutY); ctx.closePath();
+                ctx.moveTo(xm + charW * 0.12, ym + charH * 0.18); ctx.lineTo(x1 + charW * 0.08, y1 + charH * 0.08);
+                break;
+            case 'U':
+                ctx.moveTo(x0, y0); ctx.lineTo(x0, y1 - cutY); ctx.lineTo(x0 + cutX, y1);
+                ctx.lineTo(x1 - cutX, y1); ctx.lineTo(x1, y1 - cutY); ctx.lineTo(x1, y0);
+                break;
+            case 'A':
+                ctx.moveTo(x0, y1); ctx.lineTo(x0 + charW * 0.22, y0); ctx.lineTo(x1 - charW * 0.22, y0);
+                ctx.lineTo(x1, y1); ctx.moveTo(x0 + charW * 0.14, ym + charH * 0.14); ctx.lineTo(x1 - charW * 0.14, ym + charH * 0.14);
+                break;
+            case 'N':
+                ctx.moveTo(x0, y1); ctx.lineTo(x0, y0); ctx.lineTo(x1, y1); ctx.lineTo(x1, y0);
+                break;
+            case 'T':
+                ctx.moveTo(x0, y0); ctx.lineTo(x1, y0); ctx.moveTo(xm, y0); ctx.lineTo(xm, y1);
+                break;
+            case 'M':
+                ctx.moveTo(x0, y1); ctx.lineTo(x0, y0); ctx.lineTo(xm, ym + charH * 0.12);
+                ctx.lineTo(x1, y0); ctx.lineTo(x1, y1);
+                break;
+            case 'P':
+                ctx.moveTo(x0, y1); ctx.lineTo(x0, y0); ctx.lineTo(x1 - cutX, y0);
+                ctx.lineTo(x1, y0 + cutY); ctx.lineTo(x1, ym); ctx.lineTo(x1 - cutX, ym + charH * 0.06);
+                ctx.lineTo(x0, ym + charH * 0.06);
+                break;
+            case 'L':
+                ctx.moveTo(x0, y0); ctx.lineTo(x0, y1); ctx.lineTo(x1, y1);
+                break;
+            case 'S':
+                ctx.moveTo(x1, y0 + cutY * 0.6); ctx.lineTo(x1 - cutX, y0); ctx.lineTo(x0 + cutX, y0);
+                ctx.lineTo(x0, y0 + cutY); ctx.lineTo(x0, ym - charH * 0.05); ctx.lineTo(x0 + cutX, ym);
+                ctx.lineTo(x1 - cutX, ym); ctx.lineTo(x1, ym + charH * 0.05); ctx.lineTo(x1, y1 - cutY);
+                ctx.lineTo(x1 - cutX, y1); ctx.lineTo(x0 + cutX, y1); ctx.lineTo(x0, y1 - cutY * 0.6);
+                break;
+            case '6':
+                ctx.moveTo(x1 - cutX * 0.4, y0); ctx.lineTo(x0 + cutX, y0); ctx.lineTo(x0, y0 + cutY);
+                ctx.lineTo(x0, y1 - cutY); ctx.lineTo(x0 + cutX, y1); ctx.lineTo(x1 - cutX, y1);
+                ctx.lineTo(x1, y1 - cutY); ctx.lineTo(x1, ym + cutY * 0.5); ctx.lineTo(x1 - cutX, ym - charH * 0.02);
+                ctx.lineTo(x0, ym - charH * 0.02);
+                break;
+        }
+        cx += charW + spacing;
+    }
+}
+
+function drawQuantumEnergyTitle(nowMs) {
+    const w = titleCanvas.width;
+    const h = titleCanvas.height;
+    tCtx.clearRect(0, 0, w, h);
+
+    const hueBase = ((nowMs % 7500) / 7500) * 360.0;
+    const pulsePhase = (nowMs % 1500) / 1500;
+    const pulse = 0.75 + 0.25 * (0.5 - 0.5 * Math.cos(pulsePhase * Math.PI * 2.0));
+
+    const rad = hueBase * (Math.PI / 180.0);
+    const hCyan = (188 + Math.sin(rad) * 28 + 360) % 360;
+    const hMid = (235 + Math.cos(rad) * 35 + 360) % 360;
+    const hPink = (305 + Math.sin(rad + 1.2) * 32 + 360) % 360;
+
+    const colCyan = `hsl(${hCyan}, 95%, 55%)`;
+    const colMid = `hsl(${hMid}, 85%, 65%)`;
+    const colPink = `hsl(${hPink}, 92%, 62%)`;
+
+    const traceOctagon = (pad, bev) => {
+        tCtx.beginPath();
+        tCtx.moveTo(pad + bev, pad);
+        tCtx.lineTo(w - pad - bev, pad);
+        tCtx.lineTo(w - pad, pad + bev);
+        tCtx.lineTo(w - pad, h - pad - bev);
+        tCtx.lineTo(w - pad - bev, h - pad);
+        tCtx.lineTo(pad + bev, h - pad);
+        tCtx.lineTo(pad, h - pad - bev);
+        tCtx.lineTo(pad, pad + bev);
+        tCtx.closePath();
+    };
+
+    // 1. Dark-Slate Octagonal Plaque Fill
+    traceOctagon(4, 30);
+    const bgGrad = tCtx.createLinearGradient(0, 0, 0, h);
+    bgGrad.addColorStop(0, 'rgba(10, 17, 32, 0.92)');
+    bgGrad.addColorStop(0.5, 'rgba(5, 8, 17, 0.95)');
+    bgGrad.addColorStop(1, 'rgba(12, 10, 28, 0.92)');
+    tCtx.fillStyle = bgGrad;
+    tCtx.fill();
+
+    // 2. Outer Beveled Rim & Inner Hairline Rim
+    const rimGrad = tCtx.createLinearGradient(0, 0, w, h);
+    rimGrad.addColorStop(0, colCyan);
+    rimGrad.addColorStop(0.5, colMid);
+    rimGrad.addColorStop(1, colPink);
+    tCtx.strokeStyle = rimGrad;
+    tCtx.lineWidth = 4.4;
+    tCtx.stroke();
+
+    traceOctagon(11, 26);
+    tCtx.strokeStyle = 'rgba(0, 229, 255, 0.35)';
+    tCtx.lineWidth = 2.0;
+    tCtx.stroke();
+
+    // 3. Side Bumper Brackets
+    const pad = 4, bevel = 30, bOff = 22, bArm = 36, bBev = 20;
+    tCtx.beginPath();
+    tCtx.moveTo(pad + bevel + bArm, pad + bOff);
+    tCtx.lineTo(pad + bOff + bBev, pad + bOff);
+    tCtx.lineTo(pad + bOff, pad + bOff + bBev);
+    tCtx.lineTo(pad + bOff, h - pad - bOff - bBev);
+    tCtx.lineTo(pad + bOff + bBev, h - pad - bOff);
+    tCtx.lineTo(pad + bevel + bArm, h - pad - bOff);
+
+    tCtx.moveTo(w - pad - bevel - bArm, pad + bOff);
+    tCtx.lineTo(w - pad - bOff - bBev, pad + bOff);
+    tCtx.lineTo(w - pad - bOff, pad + bOff + bBev);
+    tCtx.lineTo(w - pad - bOff, h - pad - bOff - bBev);
+    tCtx.lineTo(w - pad - bOff - bBev, h - pad - bOff);
+    tCtx.lineTo(w - pad - bevel - bArm, h - pad - bOff);
+    tCtx.strokeStyle = rimGrad;
+    tCtx.lineWidth = 4.8;
+    tCtx.lineCap = 'round';
+    tCtx.lineJoin = 'round';
+    tCtx.stroke();
+
+    // 4. Line 1: QUANTUM
+    const charW1 = (w * 0.50) / 7.0;
+    const spacing1 = charW1 * 0.28;
+    const charH1 = 38;
+    const totalW1 = 7 * charW1 + 6 * spacing1;
+    const startX1 = (w - totalW1) * 0.5;
+    const topY1 = h * 0.19;
+
+    tCtx.save();
+    traceSciFiGlyphPath(tCtx, "QUANTUM", startX1, topY1, charW1, charH1, spacing1);
+    tCtx.shadowColor = colCyan;
+    tCtx.shadowBlur = 24 * pulse;
+    tCtx.strokeStyle = colCyan;
+    tCtx.lineWidth = 10.5;
+    tCtx.stroke();
+    tCtx.shadowBlur = 0;
+    tCtx.strokeStyle = '#FFFFFF';
+    tCtx.lineWidth = 4.2;
+    tCtx.stroke();
+    tCtx.restore();
+
+    // 5. Line 2: PLASMA 6
+    const charW2 = (w * 0.53) / 7.55;
+    const spacing2 = charW2 * 0.28;
+    const charH2 = 38;
+    const totalW2 = 7 * charW2 + charW2 * 0.55 + 7 * spacing2;
+    const startX2 = (w - totalW2) * 0.5;
+    const topY2 = h * 0.56;
+
+    tCtx.save();
+    traceSciFiGlyphPath(tCtx, "PLASMA", startX2, topY2, charW2, charH2, spacing2);
+    tCtx.shadowColor = colMid;
+    tCtx.shadowBlur = 22 * pulse;
+    tCtx.strokeStyle = colCyan;
+    tCtx.lineWidth = 10.5;
+    tCtx.stroke();
+    tCtx.shadowBlur = 0;
+    tCtx.strokeStyle = '#FFFFFF';
+    tCtx.lineWidth = 4.2;
+    tCtx.stroke();
+    tCtx.restore();
+
+    const sixStartX = startX2 + 6 * (charW2 + spacing2) + (charW2 * 0.55 + spacing2);
+    tCtx.save();
+    traceSciFiGlyphPath(tCtx, "6", sixStartX, topY2, charW2, charH2, spacing2);
+    tCtx.shadowColor = colPink;
+    tCtx.shadowBlur = 26 * pulse;
+    tCtx.strokeStyle = colPink;
+    tCtx.lineWidth = 11.0;
+    tCtx.stroke();
+    tCtx.shadowBlur = 0;
+    tCtx.strokeStyle = '#FFD6FF';
+    tCtx.lineWidth = 4.4;
+    tCtx.stroke();
+    tCtx.restore();
+}
+
+// ==============================================================================
+// === 3. BLENDMODE.CLEAR CUTOUT MASKING & PARTICLE EXPLOSIONS ==================
+// ==============================================================================
+const mainCardWrapper = document.getElementById('mainCardWrapper');
+const cardBgCanvas = document.getElementById('cardBgCanvas');
+const cardBgCtx = cardBgCanvas.getContext('2d');
+
+function syncCardCutouts() {
+    const rect = mainCardWrapper.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const w = Math.max(1, Math.floor(rect.width * dpr));
+    const h = Math.max(1, Math.floor(rect.height * dpr));
+    if (cardBgCanvas.width !== w || cardBgCanvas.height !== h) {
+        cardBgCanvas.width = w;
+        cardBgCanvas.height = h;
+    }
+    cardBgCtx.save();
+    cardBgCtx.scale(dpr, dpr);
+    cardBgCtx.clearRect(0, 0, rect.width, rect.height);
+    cardBgCtx.fillStyle = 'rgba(0, 0, 0, 0.72)';
+    cardBgCtx.fillRect(0, 0, rect.width, rect.height);
+
+    // Punch BlendMode.Clear holes for every visible LivePreviewCutout
+    cardBgCtx.globalCompositeOperation = 'destination-out';
+    cardBgCtx.fillStyle = '#000';
+    document.querySelectorAll('.live-preview-cutout').forEach(cutout => {
+        if (cutout.offsetParent !== null) {
+            const cRect = cutout.getBoundingClientRect();
+            const cx = cRect.left - rect.left;
+            const cy = cRect.top - rect.top;
+            cardBgCtx.beginPath();
+            cardBgCtx.roundRect(cx, cy, cRect.width, cRect.height, 12);
+            cardBgCtx.fill();
+        }
+    });
+    cardBgCtx.restore();
+}
+
+// Root-level ParticleExplosion when collapsing a section
+const expCanvas = document.getElementById('explosionCanvas');
+const expCtx = expCanvas.getContext('2d');
+const activeExplosions = [];
+
+function spawnSectionExplosion(rect) {
+    if (activeExplosions.length >= 3) return;
+    const particles = [];
+    for (let i = 0; i < 180; i++) {
+        particles.push({
+            xOff: rect.left + Math.random() * rect.width,
+            yOff: rect.top + Math.random() * rect.height,
+            vx: (Math.random() - 0.5) * 150,
+            vy: -(Math.random() * 200 + 50),
+            size: Math.random() * 6 + 2.5,
+            colorBase: Math.random() * 0.5 + 0.5,
+            lifespan: Math.random() * 0.6 + 0.6
+        });
+    }
+    activeExplosions.push({ start: performance.now(), particles });
+}
+
+function updateExplosions(nowMs) {
+    if (expCanvas.width !== window.innerWidth || expCanvas.height !== window.innerHeight) {
+        expCanvas.width = window.innerWidth;
+        expCanvas.height = window.innerHeight;
+    }
+    expCtx.clearRect(0, 0, expCanvas.width, expCanvas.height);
+    for (let idx = activeExplosions.length - 1; idx >= 0; idx--) {
+        const exp = activeExplosions[idx];
+        const p = Math.min(1.0, (nowMs - exp.start) / 2800);
+        if (p >= 1.0) {
+            activeExplosions.splice(idx, 1);
+            continue;
+        }
+        exp.particles.forEach(pt => {
+            const localP = Math.min(1.0, p / pt.lifespan);
+            const alpha = 1.0 - localP;
+            if (alpha > 0) {
+                const cx = pt.xOff + pt.vx * p + Math.sin(p * 4 * Math.PI + pt.xOff * 10) * 24;
+                const cy = pt.yOff + pt.vy * p;
+                expCtx.fillStyle = `rgba(0, 229, 255, ${ alpha * pt.colorBase * 0.45 })`;
+                expCtx.beginPath();
+                expCtx.arc(cx, cy, pt.size * 3.0, 0, Math.PI * 2);
+                expCtx.fill();
+
+                expCtx.fillStyle = `rgba(255, 255, 255, ${ alpha })`;
+                expCtx.beginPath();
+                expCtx.arc(cx, cy, pt.size * alpha, 0, Math.PI * 2);
+                expCtx.fill();
+            }
+        });
+    }
+}
+
+// ==============================================================================
+// === 4. ALL 9 UNMODIFIED SHADERS FROM PlasmaShaderProvider.kt =================
+// ==============================================================================
+const GLSL_HEADER_AND_UTILS = `#version 300 es
+precision highp float;
+
+uniform float u_Time;
+uniform vec2 u_Resolution;
+
+uniform int u_RenderMode; 
+uniform int u_PowerMode; 
+
+uniform float u_Speed;
+uniform float u_Complexity;
+uniform float u_NebulaIntensity;
+uniform float u_NebulaSmoothness;
+uniform float u_EnergyIntensity;
+uniform float u_EnergySmoothness;
+uniform float u_EnableColorCycle;
+uniform float u_CycleSpeedNeb;
+uniform float u_CycleSpeedNrg;
+
+uniform vec2 u_TouchPos;
+uniform int u_TouchCount;
+uniform vec2 u_MultiTouchPos[5];
+uniform float u_TouchIntensity;
+uniform float u_TouchRadius;
+uniform vec3 u_TouchColor; 
+
+uniform float u_FlowAngle; 
+uniform vec2 u_ParallaxOffset;
+
+uniform float u_EnableChromaticShift;
+uniform float u_EnablePlasmaShatter; 
+uniform int u_BaseShape; 
+
+uniform float u_EnableGlassCore;
+uniform float u_EnableDiscHighlight;
+uniform float u_LightAngle;
+uniform float u_VortexCoreType; 
+uniform float u_VortexBump; 
+
+uniform float u_EnableLiquidGlow;
+uniform float u_EnableIridescence;
+
+uniform float u_EnableTeslaArc;
+uniform float u_TeslaArcIntensity;
+
+uniform float u_EnableBloom;
+uniform float u_EnableAA;
+
+uniform vec3 u_NebulaColor;
+uniform vec3 u_EnergyColor;
+
+out vec4 FragColor;
+
+const mat2 ROT = mat2(0.87758256, 0.47942554, -0.47942554, 0.87758256);
+const vec2 SHIFT = vec2(100.0);
+
+vec3 hsv2rgb(vec3 c) {
+    vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+    vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+    return c.z * mix(K.xxx, clamp(p - K.xxx, vec3(0.0), vec3(1.0)), c.y);
+}
+
+vec3 rgb2hsv(vec3 c) {
+    vec4 K = vec4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
+    vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
+    vec4 q = mix(vec4(p.xyw, c.r), vec4(c.r, p.yzx), step(p.x, c.r));
+    float d = q.x - min(q.w, q.y);
+    float e = 1.0e-10;
+    return vec3(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
+}
+
+vec2 hash(vec2 p) {
+    p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)));
+    return -1.0 + 2.0 * fract(sin(p) * 43758.5453123);
+}
+
+float noise(vec2 p) {
+    const float K1 = 0.366025404;
+    const float K2 = 0.211324865;
+    vec2 i = floor(p + (p.x + p.y) * K1);
+    vec2 a = p - i + (i.x + i.y) * K2;
+    vec2 o = (a.x > a.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
+    vec2 b = a - o + K2;
+    vec2 c = a - 1.0 + 2.0 * K2;
+    vec3 h = max(0.5 - vec3(dot(a,a), dot(b,b), dot(c,c)), vec3(0.0));
+    vec3 n = h * h * h * h * vec3(dot(a, hash(i)), dot(b, hash(i + o)), dot(c, hash(i + vec2(1.0))));
+    return dot(n, vec3(70.0));
+}
+
+float getFluidBase(vec2 uv, vec2 timeOffset, float t, int shape, float complexity) {
+    if (shape == 1) { 
+        float dist = length(uv - vec2(0.5));
+        return sin(dist * complexity * 15.0 - t * 4.0);
+    } else if (shape == 2) { 
+        vec2 p = uv * complexity * 2.0 + timeOffset * 0.2;
+        vec2 i = floor(p);
+        vec2 f = fract(p);
+        float res = 8.0;
+        for(int y=-1; y<=1; y++) {
+            for(int x=-1; x<=1; x++) {
+                vec2 lattice = vec2(float(x), float(y));
+                vec2 r = lattice - f + (hash(i + lattice) * 0.5 + 0.5);
+                float d = dot(r,r);
+                res = min(res, d);
+            }
+        }
+        return 1.0 - (sqrt(res) * 2.0);
+    }
+    return noise(uv * complexity + timeOffset);
+}
+
+float fbm3(vec2 x) {
+    float v = 0.5 * noise(x);
+    x = ROT * x * 2.0 + SHIFT;
+    v += 0.25 * noise(x);
+    x = ROT * x * 2.0 + SHIFT;
+    v += 0.125 * noise(x);
+    return v;
+}
+
+float fbm2(vec2 x) {
+    float v = 0.6 * noise(x);
+    x = ROT * x * 2.0 + SHIFT;
+    v += 0.4 * noise(x);
+    return v;
+}
+
+float arcDisplacement(float h, float len, float slowT, float seed, float bowAmount) {
+    float env = 4.0 * h * (1.0 - h);
+    float tipPinch = smoothstep(0.0, 0.12, h) * smoothstep(1.0, 0.88, h);
+    float archCurve = bowAmount * len * env;
+    float kinkMacro = fbm2(vec2(h * 3.8 - slowT * 0.45, seed * 4.1)) * (0.14 * len) * env;
+    float kinkMid = noise(vec2(h * 10.5 + slowT * 0.85, seed * 11.3)) * (0.055 * len) * env;
+    float kinkFine = noise(vec2(h * 24.0 - slowT * 1.35, seed * 19.7)) * (0.022 * len) * tipPinch;
+    return archCurve + kinkMacro + kinkMid + kinkFine;
+}
+
+vec2 teslaArc(vec2 p, vec2 a, vec2 b, float t, float seed, float sharpness, float bowAmount) {
+    vec2 ba = b - a;
+    float len = length(ba);
+    if (len < 0.005) return vec2(0.0);
+    vec2 dir = ba / len;
+    vec2 ortho = vec2(-dir.y, dir.x);
+    vec2 pa = p - a;
+    float x = dot(pa, dir);
+    float y = dot(pa, ortho);
+    float xOverhang = max(-x, max(0.0, x - len));
+    if (xOverhang > 0.12 || abs(y) > 0.45) return vec2(0.0);
+    float h = clamp(x / len, 0.0, 1.0);
+    float endpointAlpha = smoothstep(0.0, 0.22, h) * smoothstep(1.0, 0.78, h) * smoothstep(0.015, 0.0, xOverhang);
+    float coreEndAlpha = endpointAlpha * endpointAlpha;
+    float slowT = t * 1.1 + seed * 5.7;
+    float eps = 0.015;
+    float hNext = min(1.0, h + eps);
+    float mainPath = arcDisplacement(h, len, slowT, seed, bowAmount);
+    float nextPath = arcDisplacement(hNext, len, slowT, seed, bowAmount);
+    float slope = (nextPath - mainPath) / max((hNext - h) * len, 0.001);
+    float dPerp = abs(y - mainPath) * inversesqrt(1.0 + slope * slope);
+    float dMain = sqrt(dPerp * dPerp + xOverhang * xOverhang);
+    float coreWidth = mix(95.0, 190.0, sharpness);
+    float whiteCore = exp(-dMain * coreWidth) * 1.65 * coreEndAlpha;
+    float mainAura = (exp(-dMain * (coreWidth * 0.28)) * 0.95 + exp(-dMain * 12.0) * 0.36) * endpointAlpha;
+    float tuftMask = (exp(-h * 3.5) + exp(-(1.0 - h) * 3.5) + 0.45) * endpointAlpha;
+    float wispDelta1 = noise(vec2(h * 14.0 + slowT * 1.05, seed * 29.1)) * (0.062 * len) * tuftMask;
+    float wispDelta2 = noise(vec2(h * 18.0 - slowT * 1.20, seed * 37.9)) * (0.052 * len) * tuftMask;
+    float dWisp1 = sqrt(pow(abs(y - (mainPath + wispDelta1)) * inversesqrt(1.0 + slope * slope), 2.0) + xOverhang * xOverhang);
+    float dWisp2 = sqrt(pow(abs(y - (mainPath - wispDelta2)) * inversesqrt(1.0 + slope * slope), 2.0) + xOverhang * xOverhang);
+    float wispCore = (exp(-dWisp1 * (coreWidth * 1.3)) * 0.45 + exp(-dWisp2 * (coreWidth * 1.4)) * 0.35) * coreEndAlpha;
+    float wispAura = (exp(-dWisp1 * 28.0) * 0.50 + exp(-dWisp2 * 24.0) * 0.42) * tuftMask;
+    return vec2(whiteCore + wispCore, mainAura + wispAura);
+}
+
+vec4 hexLattice(vec2 p) {
+    const vec2 s = vec2(1.0, 1.7320508);
+    vec4 hC = floor(vec4(p, p - vec2(0.5, 1.0)) / s.xyxy) + 0.5;
+    vec4 hLocal = vec4(p - hC.xy * s, p - (hC.zw + 0.5) * s);
+    return (dot(hLocal.xy, hLocal.xy) < dot(hLocal.zw, hLocal.zw))
+        ? vec4(hLocal.xy, hC.xy)
+        : vec4(hLocal.zw, hC.zw + 0.5);
+}
+
+void main() {
+    vec2 uv = gl_FragCoord.xy / u_Resolution.xy;
+    float t = mod(u_Time * u_Speed, 628.318); 
+
+    vec3 autoNeb = hsv2rgb(vec3(fract(u_Time * u_CycleSpeedNeb), 1.0, 0.6));
+    vec3 autoNrg = hsv2rgb(vec3(fract(u_Time * u_CycleSpeedNrg + 0.15), 0.8, 0.6));
+    vec3 baseColor = mix(u_NebulaColor, autoNeb, u_EnableColorCycle);
+    vec3 energyColor = mix(u_EnergyColor, autoNrg, u_EnableColorCycle);
+
+    vec2 parallaxBg = u_ParallaxOffset * 0.02;  
+    vec2 parallaxMid = u_ParallaxOffset * 0.15; 
+    vec2 parallaxFg = u_ParallaxOffset * 0.45;  
+    
+    vec2 flowDir = vec2(cos(u_FlowAngle), sin(u_FlowAngle));
+    vec2 movingUV = uv + flowDir * (t * 0.7) + parallaxBg;
+
+    vec3 nebulaFinal = vec3(0.0);
+    vec3 energyFinal = vec3(0.0);
+    vec3 bioluminescenceFinal = vec3(0.0);
+`;
+
+const GLSL_MAIN_END = `
+    vec3 finalColor = energyFinal + nebulaFinal + bioluminescenceFinal;
+    if (u_EnableBloom > 0.5) {
+        float luma = dot(finalColor, vec3(0.299, 0.587, 0.114));
+        if (luma > 0.6) { 
+            vec3 blur = finalColor * 0.3 + finalColor * 0.15 * smoothstep(0.6, 1.0, luma); 
+            finalColor += blur;
+        }
+    }
+    FragColor = vec4(finalColor, 1.0);
+}`;
+
+const SHADER_MODES = {
+    0: `
+    vec2 mode0UV = movingUV;
+    vec2 energyPinchUV = uv + flowDir * (t * 0.7) + parallaxFg;
+    if (u_TouchCount > 0 && u_TouchIntensity > 0.001) {
+        vec2 aspect = vec2(1.0, u_Resolution.y / u_Resolution.x);
+        for (int m = 0; m < 5; m++) {
+            if (m >= u_TouchCount) break;
+            vec2 rawT = u_MultiTouchPos[m];
+            if (rawT.x < 0.0) continue;
+            vec2 screenDir = uv - rawT;
+            float dist = length(screenDir * aspect);
+            if (dist > 0.001) {
+                float nebFalloff = 1.0 - smoothstep(0.0, u_TouchRadius * 2.0, dist);
+                mode0UV += normalize(screenDir) * (nebFalloff * u_TouchIntensity * 0.2);
+                float nrgFalloff = 1.0 - smoothstep(0.0, u_TouchRadius * 1.2, dist);
+                energyPinchUV += normalize(screenDir) * (nrgFalloff * u_TouchIntensity * 0.6);
+            }
+        }
+    }
+    float n1_base = noise(mode0UV * (u_Complexity * 0.4) + vec2(t * 0.2));
+    float n2_base = noise(mode0UV * (u_Complexity * 0.8) - vec2(t * 0.3));
+    float nTwitchX = noise(mode0UV * 12.0 + vec2(t * 3.0));
+    float nTwitchY = noise(mode0UV * 12.0 - vec2(t * 3.0));
+    vec2 finalNebulaUV = mix(mode0UV + vec2(nTwitchX, nTwitchY) * 0.15, mode0UV, u_NebulaSmoothness);
+    float n1_visual = noise(finalNebulaUV * (u_Complexity * 0.4) + vec2(t * 0.2));
+    float n2_visual = noise(finalNebulaUV * (u_Complexity * 0.8) - vec2(t * 0.3));
+    nebulaFinal = baseColor * smoothstep(-0.2, 0.8, n1_visual * 0.5 + n2_visual * 0.5) * u_NebulaIntensity;
+    vec2 fluidUV = energyPinchUV + vec2(n1_base, n2_base) * 0.15;
+    float eTwitchX = noise(fluidUV * 15.0 + vec2(t * 4.0));
+    float eTwitchY = noise(fluidUV * 15.0 - vec2(t * 4.0));
+    vec2 finalEnergyUV = mix(fluidUV + vec2(eTwitchX, eTwitchY) * 0.15, fluidUV, u_EnergySmoothness);
+    float l1 = getFluidBase(finalEnergyUV, vec2(t, t * 1.5), t, u_BaseShape, u_Complexity);
+    if (u_EnablePlasmaShatter > 0.5) {
+        l1 = mix(l1, getFluidBase(finalEnergyUV, vec2(-t * 2.0), t, u_BaseShape, u_Complexity * 3.0), 0.35);
+    }
+    float ridge = 1.0 - abs(l1);
+    float currentExponent = mix(30.0, 2.0, u_EnergyIntensity);
+    float shift = (u_EnableChromaticShift > 0.5) ? (noise(fluidUV * 20.0 + t) * 0.15) : 0.0;
+    float eR = exp2(-currentExponent * (1.0 - max(ridge + shift, 0.0001)));
+    float eG = exp2(-currentExponent * (1.0 - max(ridge, 0.0001)));
+    float eB = exp2(-currentExponent * (1.0 - max(ridge - shift, 0.0001)));
+    energyFinal = (u_EnableChromaticShift > 0.5) ? vec3(eR * energyColor.r, eG * energyColor.g, eB * energyColor.b) * 2.5 : energyColor * eG * 2.5;
+    `,
+    1: `
+    vec2 baseUV = uv + flowDir * (t * 0.2) + parallaxMid;
+    float touchMask = 0.0;
+    vec2 aspect = vec2(1.0, u_Resolution.y / u_Resolution.x);
+    if (u_TouchCount > 0 && u_TouchIntensity > 0.001) {
+        for (int m = 0; m < 5; m++) {
+            if (m >= u_TouchCount) break;
+            vec2 rawT = u_MultiTouchPos[m];
+            if (rawT.x < 0.0) continue;
+            vec2 dir = uv - rawT;
+            float dist = length(dir * aspect);
+            float localMask = smoothstep(u_TouchRadius * 1.5, 0.0, dist) * u_TouchIntensity;
+            touchMask = clamp(touchMask + localMask, 0.0, 1.0);
+            if (dist > 0.001) baseUV += normalize(dir) * localMask * 0.15;
+        }
+    }
+    vec2 warp = vec2(noise(baseUV * 5.0 + t * 1.5), noise(baseUV * 5.0 - t * 1.5));
+    vec2 liquidUV = baseUV + warp * (0.15 * (1.0 - u_NebulaSmoothness));
+    vec2 orbWarp = vec2(0.0);
+    vec2 orbNormalSlope = vec2(0.0);
+    if (u_EnableLiquidGlow > 0.5) {
+        vec3 baseHsv = rgb2hsv(max(baseColor, vec3(0.05)));
+        for(int i = 0; i < 3; i++) {
+            float fi = float(i) * 2.33;
+            float tSlow = t * 0.4 + fi;
+            float tFast = t * 1.2 - fi * 2.0;
+            vec2 orbPos = vec2(0.5) + vec2(sin(tSlow) * 0.3 + sin(tFast) * 0.08, cos(tSlow * 0.8) * 0.3 + cos(tFast * 1.1) * 0.08) + parallaxMid;
+            vec2 dir = (uv - orbPos) * aspect;
+            float dist = length(dir);
+            if (dist < 0.35) {
+                vec2 safeDir = (dist > 0.0001) ? normalize(dir) : vec2(1.0, 0.0);
+                float falloff = smoothstep(0.35, 0.01, dist);
+                float wavePhase = dist * 25.0 - t * 12.0;
+                orbWarp += safeDir * (sin(wavePhase) * falloff * 0.06);
+                orbNormalSlope += safeDir * (cos(wavePhase) * falloff * 0.4);
+                float orbCore = smoothstep(0.008, 0.0, dist);
+                float orbBody = smoothstep(0.035, 0.005, dist);
+                vec3 orbBaseTint = hsv2rgb(vec3(fract(baseHsv.x + sin(fi) * 0.08), 0.9, 1.0));
+                bioluminescenceFinal += mix(orbBaseTint * 1.5, vec3(2.0), orbCore) * (orbCore + orbBody) * falloff;
+            }
+        }
+    }
+    vec2 distortedFluidUV = liquidUV + orbWarp;
+    vec2 tOffset = vec2(t * 1.0);
+    float fluidHeight = getFluidBase(distortedFluidUV, tOffset, t, u_BaseShape, u_Complexity * 1.2);
+    float nx = getFluidBase(distortedFluidUV + vec2(0.015, 0.0), tOffset, t, u_BaseShape, u_Complexity * 1.2);
+    float ny = getFluidBase(distortedFluidUV + vec2(0.0, 0.015), tOffset, t, u_BaseShape, u_Complexity * 1.2);
+    vec3 normal = normalize(vec3((nx - fluidHeight) - orbNormalSlope.x, (ny - fluidHeight) - orbNormalSlope.y, 0.05));
+    nebulaFinal = baseColor * smoothstep(-0.2, 0.8, fluidHeight) * (1.0 - touchMask) * u_NebulaIntensity * 1.5;
+    vec3 lightDir = normalize(vec3(-1.0, 1.0, 0.8));
+    float lightHit = max(dot(normal, lightDir), 0.0);
+    if (u_EnableIridescence > 0.5) {
+        float viewDot = max(dot(normal, vec3(0.0, 0.0, 1.0)), 0.0);
+        float specular = exp2(-mix(10.0, 40.0, u_EnergySmoothness) * (1.0 - lightHit));
+        energyFinal = energyColor * specular * hsv2rgb(vec3(fract(viewDot * 2.5 + t * 0.3), 0.7, 1.0)) * (1.0 + u_EnergyIntensity * 4.0);
+    } else {
+        float specular = exp2(-mix(15.0, 50.0, u_EnergySmoothness) * (1.0 - lightHit));
+        energyFinal = energyColor * specular * (1.0 + u_EnergyIntensity * 4.0);
+    }
+    energyFinal *= (1.0 - touchMask);
+    `,
+    2: `
+    if (u_TouchCount > 0 && u_TouchIntensity > 0.001) {
+        vec2 aspect = vec2(1.0, u_Resolution.y / u_Resolution.x);
+        vec2 totalRippleOffset = vec2(0.0);
+        for (int m = 0; m < 5; m++) {
+            if (m >= u_TouchCount) break;
+            vec2 rawT = u_MultiTouchPos[m];
+            if (rawT.x < 0.0) continue;
+            vec2 dir = uv - rawT;
+            float dist = length(dir * aspect);
+            if (dist > 0.001) {
+                float falloff = 1.0 - smoothstep(0.0, u_TouchRadius + 0.001, dist);
+                totalRippleOffset += normalize(dir) * (sin(dist * 40.0 - t * 15.0) * 0.15 * u_TouchIntensity * falloff);
+            }
+        }
+        uv += totalRippleOffset;
+        movingUV = uv + flowDir * (t * 0.7) + parallaxBg;
+    }
+    float safeEnergyInt = min(u_EnergyIntensity, 0.5);
+    vec2 center = vec2(0.5 + sin(t * 0.8) * 0.15, 0.5 + cos(t * 0.5) * 0.15);
+    vec2 aspect = vec2(1.0, u_Resolution.y / u_Resolution.x);
+    vec2 parallaxedCenter = center - parallaxFg;
+    vec2 delta = (uv - parallaxedCenter) * aspect;
+    float rawDist = length(delta);
+    float sphereRadius = 0.18;
+    float coreNoise = (u_VortexCoreType > 0.5) ? (noise(delta * 12.0 + t * 2.5) * 0.03 * (1.0 - smoothstep(sphereRadius * 0.8, sphereRadius * 1.2, rawDist))) : 0.0;
+    float vortexDist = max(0.0, rawDist - coreNoise);
+    float pull = 1.0 - smoothstep(0.0, 0.8, vortexDist);
+    vec3 baseNormal = (vortexDist < sphereRadius) ? normalize(vec3(delta.x, delta.y, sqrt(max(0.0001, sphereRadius * sphereRadius - vortexDist * vortexDist)))) : vec3(0.0, 0.0, 1.0);
+    vec2 insideUV = parallaxedCenter + baseNormal.xy * 0.25 + flowDir * (t * 0.15);
+    float swirlAngle = pull * 8.0 - t * 3.0;
+    float s = sin(swirlAngle), c = cos(swirlAngle);
+    vec2 twistedDelta = delta * mix(1.0, 0.2, pull) * (1.0 + (0.05 / (vortexDist + 0.02)));
+    vec2 outsideUV = parallaxedCenter + (mat2(c, -s, s, c) * twistedDelta) / aspect + flowDir * (t * 0.7);
+    float blendWidth = (u_EnableAA > 0.5) ? 0.025 : 0.002;
+    float edgeBlend = smoothstep(sphereRadius - blendWidth, sphereRadius + blendWidth, vortexDist);
+    movingUV = mix(insideUV, outsideUV, edgeBlend);
+    float n1_base = noise(movingUV * (u_Complexity * 0.4) + vec2(t * 0.2));
+    float n2_base = noise(movingUV * (u_Complexity * 0.8) - vec2(t * 0.3));
+    vec2 finalNebulaUV = mix(movingUV + vec2(noise(movingUV * 12.0 + vec2(t * 3.0)), noise(movingUV * 12.0 - vec2(t * 3.0))) * 0.15, movingUV, u_NebulaSmoothness);
+    nebulaFinal = baseColor * smoothstep(-0.2, 0.8, noise(finalNebulaUV * (u_Complexity * 0.4) + vec2(t * 0.2)) * 0.5 + noise(finalNebulaUV * (u_Complexity * 0.8) - vec2(t * 0.3)) * 0.5) * u_NebulaIntensity;
+    vec2 fluidUV = movingUV + vec2(n1_base, n2_base) * 0.15;
+    vec2 finalEnergyUV = mix(fluidUV + vec2(noise(fluidUV * 15.0 + vec2(t * 4.0)), noise(fluidUV * 15.0 - vec2(t * 4.0))) * 0.15, fluidUV, u_EnergySmoothness);
+    float l1 = noise(finalEnergyUV * u_Complexity + vec2(t, t * 1.5));
+    if (u_EnablePlasmaShatter > 0.5) l1 = mix(l1, noise(finalEnergyUV * (u_Complexity * 3.0) - vec2(t * 2.0)), 0.35);
+    float ridge = 1.0 - abs(l1);
+    float l1_x = noise((finalEnergyUV + vec2(0.005, 0.0)) * u_Complexity + vec2(t, t * 1.5));
+    float l1_y = noise((finalEnergyUV + vec2(0.0, 0.005)) * u_Complexity + vec2(t, t * 1.5));
+    float dX = (1.0 - abs(l1_x)) - ridge;
+    float dY = (1.0 - abs(l1_y)) - ridge;
+    float coreToDiscMask = smoothstep(sphereRadius - 0.05, sphereRadius + 0.15, vortexDist);
+    vec3 normal = normalize(baseNormal + vec3(-dX, -dY, 0.0) * u_VortexBump * mix(15.0, 2.5, coreToDiscMask));
+    float currentExponent = mix(30.0, 2.0, safeEnergyInt);
+    float shift = (u_EnableChromaticShift > 0.5) ? (noise(fluidUV * 20.0 + t) * 0.15) : 0.0;
+    float eR = exp2(-currentExponent * (1.0 - max(ridge + shift, 0.0001)));
+    float eG = exp2(-currentExponent * (1.0 - max(ridge, 0.0001)));
+    float eB = exp2(-currentExponent * (1.0 - max(ridge - shift, 0.0001)));
+    energyFinal = (u_EnableChromaticShift > 0.5) ? vec3(eR * energyColor.r, eG * energyColor.g, eB * energyColor.b) * 2.5 : energyColor * eG * 2.5;
+    float coreShadow = mix(0.05, 1.0, smoothstep(0.0, sphereRadius, vortexDist));
+    nebulaFinal *= coreShadow;
+    energyFinal *= coreShadow;
+    float coreMask = 1.0 - edgeBlend;
+    if (coreMask > 0.001 && u_EnableGlassCore > 0.5) {
+        vec3 lightDir = normalize(vec3(cos(u_LightAngle), sin(u_LightAngle), 1.5));
+        float specular = smoothstep(0.0, 1.0, smoothstep(mix(0.98, 0.80, 0.05), 1.0, max(dot(normal, lightDir), 0.0)));
+        float fresnel = exp2(-4.0 * max(dot(normal, vec3(0.0, 0.0, 1.0)), 0.0));
+        energyFinal += energyColor * fresnel * 1.5 * coreMask + mix(vec3(1.0), energyColor, 0.15) * (specular * 0.85 * coreMask);
+    }
+    float diskGlow = (1.0 - smoothstep(sphereRadius - 0.02, sphereRadius + 0.15, vortexDist)) * smoothstep(sphereRadius - 0.05, sphereRadius + 0.02, vortexDist);
+    energyFinal += energyColor * diskGlow * (2.0 + safeEnergyInt * 3.0);
+    nebulaFinal += baseColor * diskGlow * 1.5;
+    `,
+    3: `
+    vec2 p = (uv * 2.0 - 1.0) * vec2(u_Resolution.x / u_Resolution.y, 1.0) + parallaxFg;
+    vec2 centerP = vec2(0.0, 0.2);
+    vec2 d = p - centerP;
+    float dist = length(d);
+    vec2 lensedP = p + normalize(d + vec2(0.0001)) * ((u_NebulaSmoothness * 0.4) / (dist + 0.2));
+    float mass = mix(0.05, 0.4, u_EnergySmoothness);
+    vec2 bhP = p - centerP;
+    vec2 bhDir = (length(bhP) > 0.0001) ? normalize(bhP) : vec2(1.0, 0.0);
+    float bhDist = length(bhP) - noise(bhDir * 2.5 + vec2(t * 1.5)) * (mass * 0.12);
+    float bhMask = smoothstep(mass, mass + 0.015, bhDist);
+    vec3 bhNormal = (bhDist < mass) ? normalize(vec3(bhP * (bhDist / max(0.0001, length(bhP))), sqrt(max(0.0001, mass * mass - bhDist * bhDist)))) : vec3(0.0, 0.0, 1.0);
+    vec3 stretchedNormal = normalize(vec3(bhNormal.x * 2.5, bhNormal.y, bhNormal.z));
+    float specTop = pow(max(dot(stretchedNormal, normalize(vec3(0.0, 1.0, 0.25))), 0.0), 80.0);
+    float specBot = pow(max(dot(stretchedNormal, normalize(vec3(0.0, -1.0, 0.25))), 0.0), 80.0);
+    vec3 shinyBlob = vec3(1.0, 0.95, 0.8) * (specTop + specBot) * (1.0 - bhMask) * u_EnergyIntensity * 0.45;
+    vec3 rimColor = mix(baseColor, energyColor, sin(atan(bhP.y, bhP.x) + t) * 0.5 + 0.5);
+    shinyBlob += rimColor * pow(1.0 - max(dot(bhNormal, vec3(0.0, 0.0, 1.0)), 0.0), 3.0) * smoothstep(0.1, 0.85, abs(bhNormal.x)) * (1.0 - bhMask) * u_EnergyIntensity * 2.5;
+    float rainNoise = max(0.0, fbm2(vec2(lensedP.x * 12.0, abs(lensedP.y - centerP.y) * 2.0 - t * 5.0)));
+    vec3 rainColor = energyColor * pow(rainNoise, 1.2) * smoothstep(1.5, 0.0, abs(lensedP.x)) * u_EnergyIntensity * 2.5;
+    vec2 diskP = vec2(lensedP.x, (lensedP.y - centerP.y) * mix(3.0, 5.0, u_Complexity / 10.0));
+    float diskR = length(diskP);
+    float diskA = atan(diskP.y, diskP.x);
+    float spinDir = cos(u_FlowAngle);
+    float diskNoise = max(0.0, fbm2(vec2(diskA * 2.0 - t * spinDir, diskR * 3.0 - t * 1.5 * spinDir)));
+    float diskRing = smoothstep(mass + 0.05, mass + 0.4, diskR) * smoothstep(2.5, mass + 0.1, diskR);
+    vec3 diskBaseCol = mix(baseColor, energyColor, sin(diskA + t) * 0.5 + 0.5);
+    vec3 diskColor = diskBaseCol * (diskNoise * 3.5 + pow(1.0 - abs(diskNoise * 2.0 - 1.0), 10.0) * 2.0) * diskRing * u_EnergyIntensity;
+    float jetGlow = exp(-abs(lensedP.x + noise(vec2(lensedP.y * 5.0, t * 5.0)) * 0.05) * mix(15.0, 40.0, dist));
+    vec3 jetColor = vec3(1.0, 0.95, 0.8) * jetGlow * smoothstep(1.5, 0.0, abs(lensedP.y - centerP.y)) * u_EnergyIntensity * 2.0;
+    float cloudVal = noise(vec2(p.x * 2.0, abs(p.y - centerP.y) * 3.0 - t * 0.5));
+    vec3 mode3Color = mix(baseColor * 0.1 + baseColor * noise(p * 2.0 + t * 0.1) * u_NebulaIntensity * 0.5, mix(vec3(0.05, 0.0, 0.05), baseColor, cloudVal) * u_NebulaIntensity * 1.5, smoothstep(0.0, 1.2, abs(p.y - centerP.y) + cloudVal * 0.5));
+    mode3Color += rainColor + jetColor + diskColor;
+    if (u_TouchCount > 0 && u_TouchIntensity > 0.001) {
+        int activeCount = clamp(u_TouchCount, 1, 5);
+        for (int i = 0; i < 12; i++) {
+            vec2 rawT = u_MultiTouchPos[i % activeCount];
+            if (rawT.x < 0.0) continue;
+            vec2 touchP = (rawT * 2.0 - 1.0) * vec2(u_Resolution.x / u_Resolution.y, 1.0) + parallaxFg;
+            float id = float(i);
+            vec2 rnd = hash(vec2(id, 13.37));
+            float lifespan = 4.8;
+            float normTime = mod(t * 0.8 + id * 0.12, lifespan) / lifespan;
+            vec2 currentPos = touchP + vec2(cos(rnd.x * 6.28318), sin(rnd.x * 6.28318)) * mix(1.0, 3.5, abs(rnd.y)) * normTime;
+            float gravityPull = normTime * normTime * normTime;
+            vec2 offC = currentPos - centerP;
+            float curvedAngle = atan(offC.y, offC.x) + gravityPull * 4.0;
+            vec2 finalPos = centerP + vec2(cos(curvedAngle), sin(curvedAngle)) * mix(length(offC), 0.0, gravityPull);
+            float pDist = length(p - finalPos);
+            float baseSize = mix(0.0015, 0.006, abs(rnd.x));
+            mode3Color += (vec3(1.0) * smoothstep(baseSize, baseSize * 0.1, pDist) + u_TouchColor * smoothstep(baseSize * 6.0, baseSize, pDist) * 1.5) * (1.0 - normTime * normTime) * u_TouchIntensity * 1.4;
+        }
+    }
+    energyFinal = mode3Color * bhMask + shinyBlob;
+    `,
+    4: `
+    vec2 p = (uv * 2.0 - 1.0) * vec2(u_Resolution.x / u_Resolution.y, 1.0) + parallaxFg;
+    vec2 sway = vec2(sin(t * 0.7) * 0.22, cos(t * 0.5) * 0.18);
+    float touchBoost = 0.0;
+    if (u_TouchCount > 0 && u_TouchIntensity > 0.001) {
+        vec2 avgTouch = vec2(0.0);
+        float validTouches = 0.0;
+        for (int m = 0; m < 5; m++) {
+            if (m >= u_TouchCount) break;
+            vec2 rawT = u_MultiTouchPos[m];
+            if (rawT.x < 0.0) continue;
+            vec2 touchP = (rawT * 2.0 - 1.0) * vec2(u_Resolution.x / u_Resolution.y, 1.0) + parallaxFg;
+            touchBoost += smoothstep(u_TouchRadius * 2.5 + 0.2, 0.0, length(p - touchP)) * u_TouchIntensity;
+            avgTouch += touchP;
+            validTouches += 1.0;
+        }
+        if (validTouches > 0.5) sway = mix(sway, avgTouch / validTouches, min(u_TouchIntensity, 1.0) * 0.75);
+    }
+    vec2 d = p - sway;
+    float r = length(d);
+    d += vec2(sin(r * 3.5 - t * 2.0), cos(r * 3.5 - t * 1.5)) * 0.08 * (1.0 - r * 0.4);
+    r = max(length(d), 0.005);
+    float angle = atan(d.y, d.x);
+    float z = 1.2 / (r + 0.06);
+    float warpDir = (u_BaseShape == 0) ? 1.0 : -1.0;
+    float forwardSpeed = t * 5.0 * warpDir;
+    float spiralOffset = cos(u_FlowAngle) * (z * 0.22 - t * 1.2);
+    float spiralAngle = angle + spiralOffset;
+    vec2 normD = d / r;
+    vec2 rotDir = vec2(cos(spiralOffset), sin(spiralOffset));
+    vec2 spiralVec = vec2(normD.x * rotDir.x - normD.y * rotDir.y, normD.x * rotDir.y + normD.y * rotDir.x);
+    float spA = atan(spiralVec.y, spiralVec.x);
+    float spB = atan(-spiralVec.y, -spiralVec.x);
+    float wA = smoothstep(-0.6, 0.6, spiralVec.x);
+    float wB = 1.0 - wA;
+    float wNorm = inversesqrt(wA * wA + wB * wB);
+    float turbScale = mix(3.5, 1.2, u_NebulaSmoothness);
+    float smokeZ = z * 0.35 - forwardSpeed * 0.65;
+    vec2 smokeUV_A = vec2(spA * 1.91, smokeZ);
+    vec2 smokeUV_B = vec2(spB * 1.91 + 17.3, smokeZ);
+    vec2 smokeWarpA = vec2(fbm2(smokeUV_A * turbScale + vec2(0.0, t * 1.4)), fbm2(smokeUV_A * turbScale - vec2(t * 1.4, 0.0)));
+    vec2 smokeWarpB = vec2(fbm2(smokeUV_B * turbScale + vec2(0.0, t * 1.4)), fbm2(smokeUV_B * turbScale - vec2(t * 1.4, 0.0)));
+    vec2 smokeWarp = (smokeWarpA * wA + smokeWarpB * wB) * wNorm;
+    float warpAmt = mix(1.6, 0.4, u_NebulaSmoothness);
+    float smoke1 = (fbm3(smokeUV_A * (u_Complexity * 0.35) + smokeWarpA * warpAmt) * wA + fbm3(smokeUV_B * (u_Complexity * 0.35) + smokeWarpB * warpAmt) * wB) * wNorm;
+    float smoke2 = (fbm2(smokeUV_A * (u_Complexity * 0.7) - smokeWarpA * 0.9 + vec2(t)) * wA + fbm2(smokeUV_B * (u_Complexity * 0.7) - smokeWarpB * 0.9 + vec2(t)) * wB) * wNorm;
+    float smokeDensity = smoothstep(-0.35, 0.75, smoke1 * 0.6 + smoke2 * 0.4);
+    float glossySpec = pow(clamp(1.0 - abs(smoke1 * 2.0 - 0.1), 0.0, 1.0), mix(8.0, 28.0, u_EnergySmoothness));
+    vec3 psychRainbow = hsv2rgb(vec3(fract(angle * 0.159154943 + z * 0.07 - t * 0.35 + smoke1 * 0.45), 0.85, 1.0));
+    vec3 smokeTint = mix(mix(baseColor, energyColor, sin(smoke1 * 6.0 + z * 0.4 - t * 2.0) * 0.5 + 0.5), psychRainbow, 0.55);
+    float numTracks = floor(mix(6.0, 24.0, u_Complexity / 10.0));
+    float trackSharpness = mix(10.0, 55.0, u_EnergySmoothness);
+    float acceleratorTracks = pow(abs(sin(spiralAngle * numTracks + smokeWarp.x * 3.5)), trackSharpness);
+    float photonPackets = pow(sin(z * 2.2 - forwardSpeed * 3.8 + sin(angle * 4.0) * 1.5) * 0.5 + 0.5, 8.0);
+    float depthFade = smoothstep(0.03, 0.28, r);
+    vec3 streamCol = mix(energyColor, psychRainbow, 0.5) * acceleratorTracks;
+    nebulaFinal = smokeTint * smokeDensity * depthFade * u_NebulaIntensity * 1.6 + mix(energyColor, psychRainbow, 0.5) * exp(-r * 6.5) * u_NebulaIntensity * 1.2;
+    energyFinal = (streamCol * (0.35 + 2.5 * photonPackets) + mix(vec3(1.0, 0.98, 0.95), psychRainbow, 0.35) * glossySpec * 1.8) * depthFade * u_EnergyIntensity;
+    if (touchBoost > 0.001) energyFinal += u_TouchColor * min(touchBoost, 2.5) * (1.2 + (sin(z * 4.0 - t * 20.0) * 0.5 + 0.5) * 2.5);
+    `,
+    5: `
+    vec2 aspect = vec2(u_Resolution.x / u_Resolution.y, 1.0);
+    vec2 p = (uv * 2.0 - 1.0) * aspect + parallaxFg;
+    float cAng = cos(u_FlowAngle), sAng = sin(u_FlowAngle);
+    vec2 rotP = mat2(cAng, -sAng, sAng, cAng) * p;
+    float spread = mix(0.28, 0.62, u_Complexity / 10.0);
+    vec2 node1 = vec2(cos(t * 1.1) * spread * 0.6, sin(t * 0.77) * spread);
+    vec2 node2 = -node1;
+    float touchActive = 0.0;
+    if (u_TouchCount > 0 && u_TouchIntensity > 0.001) {
+        vec2 rawT = u_MultiTouchPos[0];
+        if (rawT.x >= 0.0) {
+            vec2 touchP = (rawT * 2.0 - 1.0) * aspect + parallaxFg;
+            float d1 = length(touchP - node1), d2 = length(touchP - node2);
+            touchActive = clamp(u_TouchIntensity, 0.0, 2.0) * smoothstep(u_TouchRadius * 2.5 + 0.25, 0.0, min(d1, d2));
+            if (d1 < d2) { node1 = mix(node1, touchP, min(1.0, touchActive)); node2 = -node1; }
+            else { node2 = mix(node2, touchP, min(1.0, touchActive)); node1 = -node2; }
+        }
+    }
+    vec2 dN1 = p - node1, dN2 = p - node2;
+    float r1 = length(dN1), r2 = length(dN2);
+    vec2 corrP = rotP + normalize(dN1 + vec2(0.0001)) * (0.08 / (r1 + 0.18)) - normalize(dN2 + vec2(0.0001)) * (0.08 / (r2 + 0.18));
+    float wallDist = max(abs(corrP.x), 0.06);
+    vec2 grid3D = vec2(corrP.y / wallDist, 1.0 / wallDist - t * 2.5);
+    grid3D += fbm2(grid3D * 0.35 + t * 0.4) * (1.0 - u_NebulaSmoothness) * 1.2;
+    float gx = abs(sin(grid3D.x * 6.0)), gy = abs(sin(grid3D.y * 6.0));
+    vec3 baseHsv = rgb2hsv(max(baseColor, vec3(0.05)));
+    vec3 nrgHsv = rgb2hsv(max(energyColor, vec3(0.05)));
+    vec3 iridGridCol = hsv2rgb(vec3(fract(baseHsv.x + corrP.y * 0.25 + sin(grid3D.y * 0.2) * 0.15), 0.85, 1.0));
+    nebulaFinal = (iridGridCol * (pow(gx, 24.0) + pow(gy, 24.0)) * 0.8 + energyColor * pow(gx * gy, 35.0) * 6.0) * smoothstep(0.05, 0.55, wallDist) * exp(-wallDist * 0.85) * u_NebulaIntensity * 1.6;
+    vec2 streamUV = rotP * mix(1.2, 2.8, u_Complexity / 10.0);
+    streamUV.x += sin(atan(dN1.y, dN1.x) * 2.0 - atan(dN2.y, dN2.x) * 2.0 + t * 1.5) * 0.35 + sin(rotP.y * 2.5 - t * 1.2) * 0.4;
+    vec2 fiberCoord = streamUV + vec2(fbm2(streamUV * 1.6 + vec2(0.0, t * 0.8)), fbm2(streamUV * 1.6 - vec2(t * 0.8, 0.0))) * (1.0 + mix(0.32, 0.06, u_NebulaSmoothness) * 2.5);
+    float ridge = 1.0 - abs(sin(fiberCoord.x * 6.28318 + fbm2(fiberCoord * 2.0 - t) * 3.5));
+    float filamentExp = mix(6.0, 26.0, u_EnergySmoothness);
+    float fG = exp2(-filamentExp * (1.0 - max(ridge, 0.001)));
+    vec3 iridRibbonCol = mix(energyColor, hsv2rgb(vec3(fract(nrgHsv.x + fiberCoord.x * 0.18 + rotP.y * 0.15 - t * 0.1), 0.75, 1.0)), 0.65);
+    vec3 spheresGlow = baseColor * exp(-r1 * 8.0) * 1.2 + energyColor * exp(-r2 * 8.0) * 1.2;
+    energyFinal = (mix(baseColor, iridRibbonCol, 0.6) * fG * 1.8 + spheresGlow) * (u_EnergyIntensity * 0.75);
+    `,
+    6: `
+    vec2 aspect = vec2(u_Resolution.x / u_Resolution.y, 1.0);
+    vec2 p = (uv * 2.0 - 1.0) * aspect + parallaxFg;
+    vec2 reactorCenter = vec2(0.0, 0.06);
+    vec2 rp = p - reactorCenter;
+    float spinDir = cos(u_FlowAngle);
+    float axialShear = sin(u_FlowAngle);
+    float rRaw = max(length(rp), 0.001);
+    float toroidalAngle = atan(rp.y, rp.x);
+    float dShapeMod = (u_BaseShape == 1) ? (1.0 - 0.22 * cos(toroidalAngle)) : 1.0;
+    float stellaratorMod = (u_BaseShape == 2) ? (0.075 * sin(toroidalAngle * 5.0 - t * 1.6)) : 0.0;
+    float rMajor = mix(0.44, 0.36, float(u_BaseShape == 1)) + stellaratorMod;
+    float rMinor = (rRaw * dShapeMod) - rMajor;
+    float poloidalRadius = abs(rMinor);
+    float qFactor = mix(2.5, 8.0, u_Complexity / 10.0);
+    float helicalPhase = toroidalAngle * qFactor + (rMinor * 14.0 * (0.65 + 0.35 * axialShear)) - t * 2.4 * spinDir;
+    vec2 normP = rp / rRaw;
+    float spA = atan(normP.y, normP.x);
+    float spB = atan(-normP.y, -normP.x);
+    float wA = smoothstep(-0.6, 0.6, normP.x);
+    float wB = 1.0 - wA;
+    float wNorm = inversesqrt(wA * wA + wB * wB);
+    vec2 magUV_A = vec2(spA * 1.91, rMinor * 4.5 - t * 0.8 * spinDir);
+    vec2 magUV_B = vec2(spB * 1.91 + 13.7, rMinor * 4.5 - t * 0.8 * spinDir);
+    vec2 vLocal = (vec2(fbm2(magUV_A * 1.8 + vec2(0.0, t * 0.9)), fbm2(magUV_A * 1.8 - vec2(t * 0.9, 0.0))) * wA +
+                   vec2(fbm2(magUV_B * 1.8 + vec2(0.0, t * 0.9)), fbm2(magUV_B * 1.8 - vec2(t * 0.9, 0.0))) * wB) * wNorm;
+    vec2 lorentzAccel = vec2(-vLocal.y, vLocal.x) * 1.25 + parallaxMid * 0.8;
+    float dtStep = 0.22;
+    vec2 advOffset = -vLocal * dtStep - 0.5 * lorentzAccel * (dtStep * dtStep);
+    vec2 vAdvected = vLocal - lorentzAccel * dtStep;
+    float fStream = (fbm3((magUV_A + advOffset) * (u_Complexity * 0.42) + vAdvected) * wA +
+                     fbm3((magUV_B + advOffset) * (u_Complexity * 0.42) + vAdvected) * wB) * wNorm;
+    float kineticTemp = clamp(dot(vAdvected, vAdvected), 0.0, 1.2);
+    float fEquilibrium = exp(-poloidalRadius * 7.5 - kineticTemp * 0.45);
+    float invTau = mix(0.12, 0.56, u_NebulaSmoothness * 0.80);
+    float fBoltzmann = mix(fStream * 0.65 + 0.35, fEquilibrium, invTau);
+    float combinedWave = sin(helicalPhase + fBoltzmann * 4.5 + vLocal.x * 2.4) * 0.65 +
+                         sin(helicalPhase * 1.5 - rMinor * 18.0 + t * 1.8 * spinDir + vLocal.y * 2.0) * 0.35;
+    if (u_EnablePlasmaShatter > 0.5) {
+        combinedWave = mix(combinedWave, sin(helicalPhase * 4.0 - t * 6.0) * cos(rMinor * 45.0 + t * 4.0), 0.38);
+    }
+    float magRidge = 1.0 - abs(combinedWave);
+    float filamentSharpness = mix(6.0, 30.0, u_EnergySmoothness);
+    float ribbonCarve = mix(0.26, 1.0, pow(clamp(magRidge, 0.0001, 1.0), 1.7));
+    float innerVoidCut = (u_EnableAA > 0.5) ? smoothstep(0.18, 0.30, rRaw) : smoothstep(0.20, 0.27, rRaw);
+    float torusWallMask = exp(-poloidalRadius * poloidalRadius * 15.0) * innerVoidCut;
+    float outerVesselRing = exp(-abs(rRaw - (rMajor + 0.26)) * 18.0) * 0.40;
+    float innerElectrodeR = rMajor * 0.62;
+    vec2 centerArcAccum = vec2(0.0);
+    float chargeBuildGlow = 0.0;
+    float arcClock = u_Time * (0.22 + u_Speed * 0.48);
+    if (u_EnableTeslaArc > 0.5 && u_TeslaArcIntensity > 0.001) {
+        for (int k = 0; k < 2; k++) {
+            float fk = float(k);
+            float cycleTime = arcClock * (0.68 + fk * 0.22) + fk * 1.618;
+            float cycleId = floor(cycleTime);
+            float phase = fract(cycleTime);
+            vec2 rnd = hash(vec2(cycleId, fk * 19.3 + 7.1));
+            float startAng = rnd.x * 3.14159265 - t * 0.35 * spinDir;
+            float endAng = startAng + 3.14159265 + rnd.y * 0.75;
+            vec2 pStart = vec2(cos(startAng), sin(startAng)) * innerElectrodeR;
+            vec2 pEnd = vec2(cos(endAng), sin(endAng)) * innerElectrodeR;
+            float chargeEnv = smoothstep(0.06, 0.36, phase) * smoothstep(0.75, 0.38, phase);
+            chargeBuildGlow += (exp(-length(rp - pStart) * 16.0) + exp(-length(rp - pEnd) * 18.0) * 0.6) * chargeEnv * 0.18 * u_TeslaArcIntensity;
+            if (phase > 0.30 && phase < 0.92) {
+                float strikeEnv = smoothstep(0.30, 0.44, phase) * smoothstep(0.92, 0.74, phase);
+                float bowAmount = ((rnd.x >= 0.0) ? 1.0 : -1.0) * mix(0.10, 0.32, clamp((phase - 0.30) / 0.62, 0.0, 1.0));
+                float pulse = 0.84 + 0.16 * sin(arcClock * 11.0 + fk * 4.0);
+                centerArcAccum += teslaArc(rp, pStart, pEnd, arcClock, cycleId + fk * 11.0, u_EnergySmoothness, bowAmount) * strikeEnv * pulse * u_TeslaArcIntensity;
+            }
+        }
+    }
+    vec2 touchArcAccum = vec2(0.0);
+    if (u_TouchCount > 0 && u_TouchIntensity > 0.001) {
+        float clampedTouchInt = clamp(u_TouchIntensity, 0.0, 2.0);
+        float touchSpread = mix(0.38, 1.05, u_TouchRadius);
+        for (int m = 0; m < 5; m++) {
+            if (m >= u_TouchCount) break;
+            vec2 rawT = u_MultiTouchPos[m];
+            if (rawT.x < 0.0) continue;
+            vec2 touchP = (rawT * 2.0 - 1.0) * aspect + parallaxFg - reactorCenter;
+            float baseTouchAng = atan(touchP.y, touchP.x);
+            for (int j = -1; j <= 1; j++) {
+                float fj = float(j);
+                float anchorAng = baseTouchAng + fj * touchSpread;
+                vec2 ringAnchor = vec2(cos(anchorAng), sin(anchorAng)) * (rMajor / max(dShapeMod, 0.5));
+                float bow = (fj == 0.0) ? (0.10 * sin(arcClock * 1.8)) : (fj * 0.20);
+                touchArcAccum += teslaArc(rp, ringAnchor, touchP, arcClock * 1.05, fj * 17.3 + float(m) * 9.0, u_EnergySmoothness, bow) * clampedTouchInt * 0.65;
+            }
+            float dFinger = length(rp - touchP);
+            touchArcAccum.x += exp(-dFinger * 38.0) * 0.35 * clampedTouchInt;
+            touchArcAccum.y += exp(-dFinger * 14.0) * 0.25 * clampedTouchInt;
+        }
+    }
+    float xPointStrike = (exp(-length(rp - vec2(-0.19, -0.43)) * 14.5) + exp(-length(rp - vec2(0.19, -0.43)) * 14.5)) * (0.65 + 0.25 * sin(t * 6.0 + fBoltzmann * 4.0));
+    float xArc = exp(-abs(rp.y + 0.43 + abs(rp.x) * 0.55 - sin(rp.x * 14.0 + t * 4.0) * 0.03) * 34.0) * smoothstep(0.45, 0.0, abs(rp.x));
+    float divertorTotal = xPointStrike * 0.425 + xArc * 0.325;
+    vec3 blanketHsv = rgb2hsv(max(baseColor, vec3(0.03)));
+    vec3 nrgHsv = rgb2hsv(max(energyColor, vec3(0.04)));
+    vec3 harmonicColor = hsv2rgb(vec3(fract(nrgHsv.x + rMinor * 0.65 + sin(toroidalAngle * 2.0 - t * 0.5) * 0.16 + fBoltzmann * 0.22), 0.88, 1.0));
+    vec3 vibrantBlanketCol = hsv2rgb(vec3(blanketHsv.x, max(blanketHsv.y, 0.78), max(blanketHsv.z, 0.96)));
+    vec3 arcAuraColor = mix(vibrantBlanketCol, energyColor, 0.25);
+    vec3 arcWhiteCore = mix(vibrantBlanketCol, vec3(1.0), 0.84);
+    vec3 activeTouchTint = mix(u_TouchColor, vibrantBlanketCol, u_EnableColorCycle * 0.75);
+    float thermalIndex = clamp((fBoltzmann * ribbonCarve) * torusWallMask * 1.15 + kineticTemp * 0.22 + divertorTotal * 0.25, 0.0, 1.0);
+    vec3 thermalCol = mix(baseColor * 0.28, baseColor, smoothstep(0.0, 0.38, thermalIndex));
+    thermalCol = mix(thermalCol, mix(energyColor, harmonicColor, 0.5), smoothstep(0.32, 0.76, thermalIndex));
+    thermalCol = mix(thermalCol, activeTouchTint, smoothstep(0.72, 1.0, thermalIndex) * 0.75);
+    vec3 ribbonPalette = mix(energyColor, mix(harmonicColor, activeTouchTint, 0.38), sin(toroidalAngle + rMinor * 8.0 - t) * 0.5 + 0.5);
+    vec3 coilGlow = vec3(0.0);
+    if (u_EnableChromaticShift > 0.5) {
+        float cShift = 0.075 * (1.0 + kineticTemp * 0.4);
+        coilGlow = vec3(
+            pow(clamp(1.0 - abs(sin(helicalPhase + cShift + fBoltzmann * 4.5)), 0.0001, 1.0), filamentSharpness),
+            pow(clamp(magRidge, 0.0001, 1.0), filamentSharpness),
+            pow(clamp(1.0 - abs(sin(helicalPhase - cShift + fBoltzmann * 4.5)), 0.0001, 1.0), filamentSharpness)
+        ) * ribbonPalette * 1.75;
+    } else {
+        coilGlow = ribbonPalette * pow(clamp(magRidge, 0.0001, 1.0), filamentSharpness) * 1.65;
+    }
+    vec2 totalArcs = centerArcAccum + touchArcAccum;
+    vec3 arcGlowFinal = arcAuraColor * (totalArcs.y * 1.15 + chargeBuildGlow) + arcWhiteCore * (totalArcs.x * 1.30);
+    vec3 divertorGlow = mix(activeTouchTint, harmonicColor, 0.35) * divertorTotal;
+    vec3 rawNebula = thermalCol * torusWallMask * ribbonCarve * 1.15 + baseColor * outerVesselRing + divertorGlow * 0.175 + arcAuraColor * totalArcs.y * 0.25;
+    vec3 rawEnergy = (coilGlow * torusWallMask * (0.85 + kineticTemp * 0.45)) + divertorGlow * 0.375 + arcGlowFinal;
+    nebulaFinal = (rawNebula / (1.0 + rawNebula * 0.42)) * u_NebulaIntensity;
+    energyFinal = (rawEnergy / (1.0 + rawEnergy * 0.38)) * u_EnergyIntensity;
+    `,
+    7: `
+    vec2 aspect = vec2(u_Resolution.x / u_Resolution.y, 1.0);
+    vec2 p = (uv * 2.0 - 1.0) * aspect + parallaxFg;
+    float cAng = cos(u_FlowAngle - 1.5707963);
+    float sAng = sin(u_FlowAngle - 1.5707963);
+    mat2 magRot = mat2(cAng, -sAng, sAng, cAng);
+    vec2 ap = magRot * p;
+    float driftDir = (cos(u_FlowAngle) >= 0.0) ? 1.0 : -1.0;
+    vec3 baseHsv = rgb2hsv(max(baseColor, vec3(0.04)));
+    vec3 nrgHsv = rgb2hsv(max(energyColor, vec3(0.04)));
+    vec3 tchHsv = rgb2hsv(max(u_TouchColor, vec3(0.04)));
+    vec3 upperCoronaCol = hsv2rgb(vec3(baseHsv.x, max(baseHsv.y, 0.82), max(baseHsv.z, 0.92)));
+    vec3 mainAuroraCol = hsv2rgb(vec3(nrgHsv.x, max(nrgHsv.y, 0.88), max(nrgHsv.z, 1.0)));
+    vec3 lowerHemCol = hsv2rgb(vec3(tchHsv.x, max(tchHsv.y, 0.88), max(tchHsv.z, 1.0)));
+    lowerHemCol = mix(lowerHemCol, hsv2rgb(vec3(fract(nrgHsv.x + 0.38), 0.92, 1.0)), u_EnableColorCycle * 0.75);
+    float touchBillow = 0.0;
+    float totalTouchWavePush = 0.0;
+    vec3 touchAuroralPillar = vec3(0.0);
+    if (u_TouchCount > 0 && u_TouchIntensity > 0.001) {
+        float clampedTouchInt = clamp(u_TouchIntensity, 0.0, 2.0);
+        float billowRad = max(u_TouchRadius * 1.8 + 0.25, 0.15);
+        for (int m = 0; m < 5; m++) {
+            if (m >= u_TouchCount) break;
+            vec2 rawT = u_MultiTouchPos[m];
+            if (rawT.x < 0.0) continue;
+            vec2 touchAP = magRot * ((rawT * 2.0 - 1.0) * aspect + parallaxFg);
+            vec2 dT = ap - touchAP;
+            float rT = length(dT);
+            float localBillow = smoothstep(billowRad, 0.0, rT) * clampedTouchInt;
+            touchBillow = min(2.5, touchBillow + localBillow);
+            totalTouchWavePush += sin((ap.x - touchAP.x) * 8.0 - u_Time * 5.0 + float(m)) * 0.22 * localBillow;
+            float pillarDistX = abs(dT.x + 0.04 * sin(ap.y * 8.0 - t * 6.0 + float(m)));
+            float pillarVerticalEnv = exp(-abs(dT.y) * 1.65) * smoothstep(billowRad * 0.9, 0.0, pillarDistX);
+            float surfingElectrons = 0.55 + 0.45 * sin(ap.y * 22.0 + u_Time * (6.0 + u_Speed * 8.0) + float(m) * 1.5);
+            float pillarCore = exp(-pillarDistX * mix(35.0, 90.0, u_EnergySmoothness)) * pillarVerticalEnv * surfingElectrons;
+            float pillarAura = exp(-pillarDistX * 12.0) * pillarVerticalEnv;
+            touchAuroralPillar += (vec3(1.0, 0.98, 1.0) * pillarCore * 1.5 + mix(lowerHemCol, mainAuroraCol, 0.5) * pillarAura * 1.3) * clampedTouchInt;
+        }
+    }
+    float stormTurb = mix(1.60, 0.08, u_NebulaSmoothness);
+    float foldFreq = mix(1.4, 3.6, u_Complexity / 10.0);
+    float rayFreq = mix(10.0, 34.0, u_Complexity / 10.0);
+    float raySharpness = mix(3.5, 30.0, u_EnergySmoothness);
+    vec3 curtainNebulaAccum = vec3(0.0);
+    vec3 curtainEnergyAccum = vec3(0.0);
+    for (int k = 0; k < 6; k++) {
+        float fk = float(k);
+        float depthWeight = 1.0 - fk * 0.12;
+        vec2 layerP = ap * (0.72 + fk * 0.24) + parallaxMid * (1.2 - fk * 0.18);
+        float baseY = -0.68 + fk * 0.26;
+        float xCoord = layerP.x + sin(layerP.y * 1.8 + fk * 1.4 - t * 0.6 * driftDir) * (0.22 + 0.28 * stormTurb);
+        float macroWave = sin(xCoord * foldFreq + t * (0.8 + fk * 0.12) * driftDir + fk * 2.1) * 0.26;
+        float vortexCurl = fbm3(vec2(xCoord * (foldFreq * 0.85) - t * 0.5 * driftDir, fk * 3.7 + t * 0.35)) * 0.42 * stormTurb;
+        float yFootprint = baseY + macroWave + vortexCurl + totalTouchWavePush;
+        float eps = 0.03;
+        float xNext = xCoord + eps;
+        float foldSlope = ((baseY + sin(xNext * foldFreq + t * (0.8 + fk * 0.12) * driftDir + fk * 2.1) * 0.26 + fbm3(vec2(xNext * (foldFreq * 0.85) - t * 0.5 * driftDir, fk * 3.7 + t * 0.35)) * 0.42 * stormTurb) - (baseY + macroWave + vortexCurl)) / eps;
+        float foldTangency = clamp(sqrt(1.0 + foldSlope * foldSlope * 0.85), 1.0, 2.6);
+        float hCurtain = 0.0, verticalEnv = 0.0, rayPhase = 0.0;
+        if (u_BaseShape == 0) {
+            float rayTiltX = xCoord - (layerP.y - yFootprint) * (0.18 * sin(fk + t * 0.3));
+            hCurtain = (layerP.y - yFootprint) / (0.68 + 0.15 * sin(xCoord * 2.0 + fk));
+            verticalEnv = smoothstep(-0.06, 0.05, hCurtain) * exp(-max(hCurtain, 0.0) * mix(2.2, 3.6, u_EnergySmoothness * 0.5));
+            rayPhase = rayTiltX * rayFreq + fbm2(vec2(rayTiltX * 3.5, fk * 5.1 - t * 0.8)) * (2.5 * stormTurb) - t * 1.8 * driftDir;
+        } else if (u_BaseShape == 1) {
+            vec2 dZ = layerP - vec2(sin(t * 0.3) * 0.15, 0.85);
+            float perspX = dZ.x / max(0.35 - dZ.y * 0.65, 0.18);
+            hCurtain = (layerP.y - yFootprint * 0.55 + 0.35) * 0.85;
+            verticalEnv = smoothstep(-0.08, 0.08, hCurtain) * exp(-max(hCurtain, 0.0) * 2.0);
+            rayPhase = perspX * (rayFreq * 0.65) + fbm2(vec2(perspX * 2.5, fk * 4.3 + t * 0.6)) * (2.2 * stormTurb) - t * 1.5 * driftDir;
+        } else {
+            float diagY = layerP.y - layerP.x * 0.42 - sin(layerP.x * 2.2 - t * 0.7 * driftDir) * 0.18;
+            if (k < 2) {
+                hCurtain = abs(diagY - (fk - 0.5) * 0.14) * 3.2;
+                verticalEnv = exp(-hCurtain * mix(3.5, 8.5, u_EnergySmoothness));
+                rayPhase = (layerP.x * 1.5 + layerP.y * 0.6) * (rayFreq * 0.45) - t * 4.5 * driftDir + vortexCurl * 2.0;
+            } else {
+                hCurtain = (diagY + (fk - 3.5) * 0.22) * 1.8;
+                verticalEnv = smoothstep(-0.05, 0.06, hCurtain) * exp(-max(hCurtain, 0.0) * 3.8);
+                rayPhase = layerP.x * (rayFreq * 1.15) - t * 2.8 * driftDir + vortexCurl * 1.5;
+            }
+        }
+        if (verticalEnv > 0.002) {
+            float rawRayWave = sin(rayPhase);
+            if (u_EnablePlasmaShatter > 0.5) rawRayWave = mix(rawRayWave, sin(rayPhase * 3.5 - t * 6.0) * cos(hCurtain * 32.0 + t * 5.0), 0.40);
+            float rayRidge = 1.0 - abs(rawRayWave);
+            float alfvenPacket = 0.55 + 0.45 * sin(hCurtain * 14.0 + t * 5.2 - fk * 1.7 + sin(rayPhase * 0.5));
+            float lowerHemGlow = exp(-abs(hCurtain - 0.03) * mix(16.0, 38.0, u_EnergySmoothness)) * 1.45;
+            vec3 altitudeColor = mix(mainAuroraCol, upperCoronaCol, smoothstep(0.18, 0.68, clamp(hCurtain, 0.0, 1.0)));
+            altitudeColor = mix(altitudeColor, lowerHemCol, exp(-max(hCurtain, 0.0) * 14.0) * 0.82);
+            if (u_BaseShape == 2 && k < 2) altitudeColor = mix(upperCoronaCol, lowerHemCol, 0.55);
+            float rG = exp2(-raySharpness * (1.0 - clamp(rayRidge, 0.001, 1.0)));
+            float sheetWeight = verticalEnv * depthWeight * foldTangency;
+            curtainNebulaAccum += altitudeColor * (0.28 + 0.42 * rayRidge) * sheetWeight * 0.52;
+            curtainEnergyAccum += (altitudeColor * rG * alfvenPacket * 1.25 + lowerHemCol * lowerHemGlow * (0.45 + 0.55 * rayRidge)) * sheetWeight;
+        }
+    }
+    float skyGlow = smoothstep(-0.5, 0.8, fbm2(ap * 1.4 - vec2(t * 0.2 * driftDir, 0.0)));
+    vec3 rawNebula = curtainNebulaAccum + upperCoronaCol * skyGlow * 0.38 + lowerHemCol * touchBillow * 0.30;
+    vec3 rawEnergy = curtainEnergyAccum * 0.85 + touchAuroralPillar;
+    nebulaFinal = (rawNebula / (1.0 + rawNebula * 0.38)) * u_NebulaIntensity;
+    energyFinal = (rawEnergy / (1.0 + rawEnergy * 0.35)) * u_EnergyIntensity;
+    `,
+    8: `
+    vec2 aspect = vec2(u_Resolution.x / u_Resolution.y, 1.0);
+    vec2 p = (uv * 2.0 - 1.0) * aspect + parallaxFg;
+    float cAng = cos(u_FlowAngle), sAng = sin(u_FlowAngle);
+    vec2 flowVec = vec2(cAng, sAng), orthoVec = vec2(-sAng, cAng);
+    vec3 baseHsv = rgb2hsv(max(baseColor, vec3(0.04)));
+    vec3 nrgHsv = rgb2hsv(max(energyColor, vec3(0.04)));
+    vec3 tchHsv = rgb2hsv(max(u_TouchColor, vec3(0.04)));
+    vec3 poolColor = hsv2rgb(vec3(baseHsv.x, max(baseHsv.y, 0.85), max(baseHsv.z, 0.90)));
+    vec3 cherenkovGlow = hsv2rgb(vec3(nrgHsv.x, max(nrgHsv.y, 0.88), max(nrgHsv.z, 1.0)));
+    vec3 rodPulseColor = hsv2rgb(vec3(tchHsv.x, max(tchHsv.y, 0.86), max(tchHsv.z, 1.0)));
+    rodPulseColor = mix(rodPulseColor, hsv2rgb(vec3(fract(nrgHsv.x + 0.16), 0.90, 1.0)), u_EnableColorCycle * 0.75);
+    float touchScram = 0.0, touchShockWave = 0.0;
+    vec2 refractionPush = vec2(0.0);
+    if (u_TouchCount > 0 && u_TouchIntensity > 0.001) {
+        float clampedTouchInt = clamp(u_TouchIntensity, 0.0, 2.0);
+        float touchRad = max(u_TouchRadius * 1.8 + 0.25, 0.15);
+        for (int m = 0; m < 5; m++) {
+            if (m >= u_TouchCount) break;
+            vec2 rawT = u_MultiTouchPos[m];
+            if (rawT.x < 0.0) continue;
+            vec2 tP = (rawT * 2.0 - 1.0) * aspect + parallaxFg;
+            vec2 dT = p - tP;
+            float rT = length(dT);
+            float localScram = smoothstep(touchRad, 0.0, rT) * clampedTouchInt;
+            touchScram = min(2.5, touchScram + localScram);
+            float shockPhase = rT * 28.0 - u_Time * (4.5 + u_Speed * 6.0) + float(m) * 1.2;
+            float shockRing = pow(clamp(0.5 + 0.5 * cos(shockPhase), 0.0001, 1.0), 7.0);
+            touchShockWave += (shockRing * 1.45 + exp(-rT * 10.0) * 0.95) * localScram;
+            if (rT > 0.001) refractionPush += (dT / rT) * sin(shockPhase) * 0.055 * localScram;
+        }
+    }
+    float waterTurb = mix(1.45, 0.06, u_NebulaSmoothness);
+    vec2 waterUV = (p + refractionPush) * mix(1.5, 3.2, u_Complexity / 10.0) + flowVec * (t * 0.5);
+    vec2 causticWarp = vec2(fbm3(waterUV * 1.6 + vec2(0.0, t * 1.1)), fbm3(waterUV * 1.6 - vec2(t * 1.1, 0.0))) * waterTurb;
+    vec2 refractedP = p + refractionPush + causticWarp * 0.14;
+    float hexScale = mix(3.2, 8.5, u_Complexity / 10.0);
+    vec4 hex1 = hexLattice(refractedP * hexScale);
+    vec4 hex2 = hexLattice((refractedP + parallaxMid * 0.35 + causticWarp * 0.08) * (hexScale * 1.85));
+    float rodDist1 = length(hex1.xy), rodDist2 = length(hex2.xy);
+    vec2 cellRnd1 = hash(hex1.zw), cellRnd2 = hash(hex2.zw);
+    float rodFlux1 = 0.5 + 0.5 * sin(t * (2.5 + abs(cellRnd1.x) * 2.5) + cellRnd1.y * 6.28318 + dot(hex1.zw, flowVec) * 0.8);
+    float rodFlux2 = 0.5 + 0.5 * sin(t * 2.0 + cellRnd2.x * 6.28318);
+    float aaEdge = (u_EnableAA > 0.5) ? 0.04 : 0.01;
+    float hexWall1 = smoothstep(0.42 - aaEdge, 0.48, rodDist1);
+    float fuelRodCore1 = smoothstep(0.28 + aaEdge, 0.12, rodDist1) * rodFlux1;
+    float fuelRodRing1 = exp(-abs(rodDist1 - 0.30) * mix(18.0, 48.0, u_EnergySmoothness)) * (0.6 + 0.6 * rodFlux1);
+    float deepSubGrid = exp(-abs(rodDist2 - 0.34) * 22.0) * (0.35 + 0.45 * rodFlux2);
+    vec2 rotP = vec2(dot(refractedP, flowVec), dot(refractedP, orthoVec));
+    float machSlope = mix(1.15, 2.25, u_EnergySmoothness);
+    float coneFreq = mix(5.0, 16.0, u_Complexity / 10.0);
+    float machPhase1 = (rotP.x + abs(rotP.y) * machSlope) * coneFreq - t * 4.5 + causticWarp.x * 1.8;
+    float machPhase2 = (-rotP.x + abs(rotP.y - 0.25 * sin(t * 0.7)) * machSlope) * (coneFreq * 0.8) - t * 3.8 + causticWarp.y * 1.8;
+    float richRings = length(refractedP) * (coneFreq * 1.4) - t * 3.5 + fbm2(waterUV * 2.0) * 2.5;
+    float rawWave = (u_BaseShape == 0) ? (sin(machPhase1) * 0.65 + cos(rodDist1 * 18.0 - t * 3.0) * 0.35)
+                  : ((u_BaseShape == 1) ? (sin(machPhase1) * 0.55 + sin(machPhase2) * 0.45) : (sin(richRings) * 0.60 + sin(machPhase1 * 0.7) * 0.40));
+    if (u_EnablePlasmaShatter > 0.5) rawWave = mix(rawWave, sin(machPhase1 * 3.5 - t * 6.0) * cos(machPhase2 * 3.5 + t * 6.0), 0.38);
+    float ridge = 1.0 - abs(rawWave);
+    float coneExp = mix(4.0, 32.0, u_EnergySmoothness);
+    float cShift = (u_EnableChromaticShift > 0.5) ? (0.08 + 0.04 * sin(t + rotP.x * 4.0)) : 0.018;
+    vec3 shockConeEnergy = vec3(
+        exp2(-coneExp * (1.0 - clamp(ridge + cShift, 0.001, 1.0))),
+        exp2(-coneExp * (1.0 - clamp(ridge, 0.001, 1.0))),
+        exp2(-coneExp * (1.0 - clamp(ridge - cShift, 0.001, 1.0)))
+    ) * mix(cherenkovGlow, rodPulseColor, 0.28) * 1.65;
+    float reactorMask = (u_BaseShape == 0) ? 1.0 : ((u_BaseShape == 1) ? 0.35 : 0.55);
+    vec3 rodGlowCol = mix(cherenkovGlow, rodPulseColor, clamp(rodFlux1 * 0.65, 0.0, 1.0));
+    vec3 coreLatticeNebula = (poolColor * (0.45 + 0.55 * hexWall1) + rodGlowCol * fuelRodCore1 * 1.15 + cherenkovGlow * deepSubGrid) * reactorMask;
+    vec3 waterVolumeNebula = mix(poolColor, cherenkovGlow, 0.35) * smoothstep(-0.35, 0.75, fbm3(waterUV * 0.8 + causticWarp * 0.6)) * 1.1;
+    vec3 rawNebula = coreLatticeNebula + waterVolumeNebula + rodPulseColor * touchScram * 0.40;
+    vec3 rawEnergy = shockConeEnergy + rodGlowCol * (fuelRodRing1 * 1.35 + fuelRodCore1 * 0.65) * reactorMask + mix(rodPulseColor, vec3(1.0), 0.45) * touchShockWave * 1.4;
+    nebulaFinal = (rawNebula / (1.0 + rawNebula * 0.38)) * u_NebulaIntensity;
+    energyFinal = (rawEnergy / (1.0 + rawEnergy * 0.34)) * u_EnergyIntensity;
+    `
+};
+
+// ==============================================================================
+// === 5. WEBGL2 COMPILER & UNIFORM DISPATCHER ==================================
+// ==============================================================================
+const glCanvas = document.getElementById('glCanvas');
+const gl = glCanvas.getContext('webgl2', { antialias: false, depth: false, stencil: false });
+let currentProgram = null;
+const startTimeMs = performance.now();
+
+function compileShaderForMode(mode) {
+    const vsSrc = `#version 300 es
+    in vec2 a_Position;
+    void main() { gl_Position = vec4(a_Position, 0.0, 1.0); }`;
+    const fsSrc = GLSL_HEADER_AND_UTILS + SHADER_MODES[mode] + GLSL_MAIN_END;
+
+    const vs = gl.createShader(gl.VERTEX_SHADER);
+    gl.shaderSource(vs, vsSrc);
+    gl.compileShader(vs);
+
+    const fs = gl.createShader(gl.FRAGMENT_SHADER);
+    gl.shaderSource(fs, fsSrc);
+    gl.compileShader(fs);
+    if (!gl.getShaderParameter(fs, gl.COMPILE_STATUS)) {
+        console.error("Mode " + mode + " Fragment Error:", gl.getShaderInfoLog(fs));
+    }
+
+    const prog = gl.createProgram();
+    gl.attachShader(prog, vs);
+    gl.attachShader(prog, fs);
+    gl.linkProgram(prog);
+    if (currentProgram) gl.deleteProgram(currentProgram);
+    currentProgram = prog;
+}
+
+const quadVbo = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, quadVbo);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+
+// ==============================================================================
+// === 6. DYNAMIC UI BUILDER (MATCHING MainActivity.kt PER-MODE CONTROLS) =======
+// ==============================================================================
+function makeSliderCard(label, propKey, min, max, isRgb, helpText) {
+    const st = modeState[activeEngineMode];
+    const val = st[propKey];
+    const displayInt = isRgb ? Math.round(val * 255) : Math.round(((val - min) / (max - min)) * 100);
+    const valText = isRgb ? `${displayInt}` : `${displayInt}%`;
+    const accent = propKey.endsWith('R') ? '#FF3B30' : (propKey.endsWith('G') ? '#4CD964' : (propKey.endsWith('B') ? '#007AFF' : '#00E5FF'));
+
+    const card = document.createElement('div');
+    card.className = 'control-card';
+    card.innerHTML = `
+        <div class="control-header">
+            <div class="control-title-wrap">
+                <span class="control-title">${label}</span>
+                ${helpText ? `<span class="info-icon" data-help-title="${label}" data-help-body="${helpText}">?</span>` : ''}
+            </div>
+            <span class="control-val" style="color:${accent}">${valText}</span>
+        </div>
+        <input type="range" class="plasma-range" style="accent-color:${accent}" min="${min}" max="${max}" step="${(max - min) / 255}" value="${val}">
+    `;
+    const rangeInput = card.querySelector('input');
+    const valSpan = card.querySelector('.control-val');
+    rangeInput.addEventListener('input', () => {
+        const v = parseFloat(rangeInput.value);
+        modeState[activeEngineMode][propKey] = v;
+        const dInt = isRgb ? Math.round(v * 255) : Math.round(((v - min) / (max - min)) * 100);
+        valSpan.textContent = isRgb ? `${dInt}` : `${dInt}%`;
+        if (isRgb) updateColorPresetSelection();
+    });
+    return card;
+}
+
+function updateColorPresetSelection() {
+    const st = modeState[activeEngineMode];
+    const bp = MODE_BLUEPRINTS[activeEngineMode];
+    const buttons = document.querySelectorAll('#colorPresetsRow .old-radio-btn');
+    buttons.forEach((btn, idx) => {
+        const p = bp.presets[idx];
+        const match = Math.abs(p.nebR - st.nebR) < 0.05 && Math.abs(p.nebG - st.nebG) < 0.05 &&
+                      Math.abs(p.nebB - st.nebB) < 0.05 && Math.abs(p.nrgR - st.nrgR) < 0.05 &&
+                      Math.abs(p.nrgG - st.nrgG) < 0.05 && Math.abs(p.nrgB - st.nrgB) < 0.05;
+        btn.classList.toggle('selected', match);
+    });
+}
+
+function rebuildDashboardForMode(mode) {
+    activeEngineMode = mode;
+    const bp = MODE_BLUEPRINTS[mode];
+    const st = modeState[mode];
+
+    // 1. Update Top Engine Banner
+    const banner = document.getElementById('engineBanner');
+    if (mode >= 3) {
+        banner.style.display = 'block';
+        const bannerText = mode === 6 ? "FUSION CORE • Boltzmann Kinetic Equation"
+                         : mode === 7 ? "AURORA • Alfvén Magnetohydrodynamic Wave"
+                         : mode === 8 ? "REACTOR • Frank-Tamm Cherenkov Formula"
+                         : "Premium Engine Active";
+        const col = mode >= 6 ? '#E040FB' : '#FFCC00';
+        banner.textContent = bannerText;
+        banner.style.color = col;
+        banner.style.border = `1px solid ${col}`;
+        banner.style.background = mode >= 6 ? 'rgba(224, 64, 251, 0.20)' : 'rgba(255, 204, 0, 0.20)';
+    } else {
+        banner.style.display = 'none';
+    }
+
+    // 2. Color Presets Row
+    const cpRow = document.getElementById('colorPresetsRow');
+    cpRow.innerHTML = '';
+    bp.presets.forEach((preset) => {
+        const btn = document.createElement('div');
+        btn.className = 'old-radio-btn';
+        btn.innerHTML = `<span class="btn-title">${preset.name}</span>`;
+        btn.addEventListener('click', () => {
+            st.nebR = preset.nebR; st.nebG = preset.nebG; st.nebB = preset.nebB;
+            st.nrgR = preset.nrgR; st.nrgG = preset.nrgG; st.nrgB = preset.nrgB;
+            if (preset.tchR !== undefined) { st.tchR = preset.tchR; st.tchG = preset.tchG; st.tchB = preset.tchB; }
+            if (preset.nebInt !== undefined) st.nebulaIntensity = preset.nebInt;
+            st.cycleEnabled = 0;
+            rebuildDashboardForMode(mode);
+        });
+        cpRow.appendChild(btn);
+    });
+    updateColorPresetSelection();
+
+    // 3. Topology Buttons
+    const topoBlock = document.getElementById('topologyBlock');
+    const topoTitle = document.getElementById('topologyTitle');
+    const topoRow = document.getElementById('topologyRow');
+    const topoConfigs = {
+        0: { title: "Core Fluid Structure", items: [["Flow", "Classic"], ["Ripples", "Concentric"], ["Cellular", "Voronoi"]] },
+        1: { title: "Core Fluid Structure", items: [["Flow", "Classic"], ["Ripples", "Concentric"], ["Cellular", "Voronoi"]] },
+        6: { title: "Core Reactor Topology", items: [["Torus", "ITER Ring"], ["Spherical", "D-Shape"], ["Stellarator", "Twisted"]] },
+        7: { title: "Magnetospheric Topology", items: [["Curtains", "3D Pleats"], ["Substorm", "Corona Dome"], ["STEVE Arch", "Picket Fence"]] },
+        8: { title: "Cherenkov Core Topology", items: [["Reactor", "Hex Fuel Core"], ["Mach Cones", "Shockwaves"], ["RICH Pool", "Ring Caustics"]] }
+    };
+    if (topoConfigs[mode]) {
+        topoBlock.style.display = 'block';
+        topoTitle.textContent = topoConfigs[mode].title;
+        topoRow.innerHTML = '';
+        topoConfigs[mode].items.forEach((pair, idx) => {
+            const btn = document.createElement('div');
+            btn.className = 'old-radio-btn' + (st.baseShape === idx ? ' selected' : '');
+            btn.innerHTML = `<span class="btn-title">${pair[0]}</span><span class="btn-sub">${pair[1]}</span>`;
+            btn.addEventListener('click', () => {
+                st.baseShape = idx;
+                topoRow.querySelectorAll('.old-radio-btn').forEach((b, i) => b.classList.toggle('selected', i === idx));
+            });
+            topoRow.appendChild(btn);
+        });
+    } else {
+        topoBlock.style.display = 'none';
+    }
+
+    // Warp Direction Toggle (Mode 4)
+    const warpDirRow = document.getElementById('warpDirRow');
+    if (mode === 4) {
+        warpDirRow.style.display = 'flex';
+        const wfToggle = document.getElementById('warpForwardToggle');
+        wfToggle.checked = (st.baseShape === 0);
+        document.getElementById('warpDirLabel').textContent = wfToggle.checked ? "Warp Direction: Forward" : "Warp Direction: Backward";
+        wfToggle.onchange = () => {
+            st.baseShape = wfToggle.checked ? 0 : 1;
+            document.getElementById('warpDirLabel').textContent = wfToggle.checked ? "Warp Direction: Forward" : "Warp Direction: Backward";
+        };
+    } else {
+        warpDirRow.style.display = 'none';
+    }
+
+    // 4. Physics Sliders Top (Speed & Complexity)
+    const topSliders = document.getElementById('physicsSlidersTop');
+    topSliders.innerHTML = '';
+    topSliders.appendChild(makeSliderCard("Animation Speed", "speed", bp.speed.min, bp.speed.max, false, "Controls how fast the fluid naturally animates and evolves over time."));
+    topSliders.appendChild(makeSliderCard("Complexity", "complexity", bp.complexity.min, bp.complexity.max, false, "Increases the mathematical fractal layers, auroral ray-pillar density, or reactor fuel-rod lattice."));
+
+    // 5. Update Flow Angle Dial
+    drawPlasmaDial(st.flowAngle);
+
+    // 6. Physics Sliders Bottom (Mode-Specific Labels from MainActivity.kt)
+    const botSliders = document.getElementById('physicsSlidersBottom');
+    botSliders.innerHTML = '';
+    const sliderLabels = {
+        8: ["Heavy-Water & Core Glow", "Mach Cones & Fuel Rings", "Coolant Convection", "Shock Cone Focus (θc)"],
+        7: ["Upper Corona Veil", "Aurora Curtains & Rays", "Geomagnetic Calm", "Ray Pillar Focus"],
+        6: ["Containment Blanket", "Magnetic Coils & Divertor", "Thermal Equilibrium (BGK τ)", "Field Line & Arc Focus"],
+        5: ["Vacuum Grid", "Node Core Intensity", "Grid Warp", "Core Tension"],
+        4: ["Smoke Density", "Beam & Gloss Intensity", "Smoke Smoothness", "Stream Focus"],
+        3: ["Background Light", "Accretion", "Lensing Distortion", "Core Mass"],
+        1: ["Fluid Intensity", "Reflection Intensity", "Fluid Movement", "Reflection Taper"],
+        0: ["Nebula Intensity", "Energy Intensity", "Nebula Smoothness", "Energy Smoothness"],
+        2: ["Nebula Intensity", "Energy Intensity", "Nebula Smoothness", "Energy Smoothness"]
+    }[mode];
+
+    botSliders.appendChild(makeSliderCard(sliderLabels[0], "nebulaIntensity", bp.nebulaIntensity.min, bp.nebulaIntensity.max, false, "Adjusts the primary background or containment layer intensity."));
+    botSliders.appendChild(makeSliderCard(sliderLabels[1], "energyIntensity", bp.energyIntensity.min, bp.energyIntensity.max, false, "Controls the brightness of the foreground energy filaments and cores."));
+    botSliders.appendChild(makeSliderCard(sliderLabels[2], "nebulaSmoothness", bp.nebulaSmoothness.min, bp.nebulaSmoothness.max, false, "Blends between high-turbulence chaos and smooth laminar equilibrium."));
+    botSliders.appendChild(makeSliderCard(sliderLabels[3], "energySmoothness", bp.energySmoothness.min, bp.energySmoothness.max, false, "Adjusts how razor-sharp the foreground energy ridges and arcs appear."));
+    botSliders.appendChild(makeSliderCard("Touch/Action Intensity", "touchIntensity", bp.touchIntensity.min, bp.touchIntensity.max, false, "Determines how strongly the field reacts to up to 5 simultaneous fingers."));
+    botSliders.appendChild(makeSliderCard("Touch/Action Radius", "touchRadius", bp.touchRadius.min, bp.touchRadius.max, false, "Changes the size and spread of each finger's interactive touch reaction."));
+
+    // 7. Quality & Lighting Toggles
+    const aaToggle = document.getElementById('aaToggle');
+    aaToggle.checked = (st.aa === 1);
+    aaToggle.onchange = () => { st.aa = aaToggle.checked ? 1 : 0; };
+
+    const bloomToggle = document.getElementById('bloomToggle');
+    bloomToggle.checked = (st.bloom === 1);
+    bloomToggle.onchange = () => { st.bloom = bloomToggle.checked ? 1 : 0; };
+
+    const lightingSpec = document.getElementById('lightingModeSpecific');
+    lightingSpec.innerHTML = '';
+    if (mode === 6) {
+        lightingSpec.appendChild(makeSliderCard("Lightning Arc Intensity", "teslaArcInt", 0.0, 2.0, false, "Controls the brightness and corona strength of the central electrical arcs."));
+    } else if (mode === 2) {
+        lightingSpec.appendChild(makeSliderCard("Surface Normal Strength", "vortexBump", 0.0, 2.0, false, "Increases the 3D embossing depth and physical shadows of the vortex layers."));
+    }
+
+    // 8. Premium Enhancements
+    const shatterToggle = document.getElementById('shatterToggle');
+    shatterToggle.checked = (st.shatter === 1);
+    shatterToggle.onchange = () => { st.shatter = shatterToggle.checked ? 1 : 0; };
+
+    const shiftToggle = document.getElementById('shiftToggle');
+    shiftToggle.checked = (st.shift === 1);
+    shiftToggle.onchange = () => { st.shift = shiftToggle.checked ? 1 : 0; };
+
+    // 9. Color Engineering (Color Cycle + 3-Bank RGB Sliders)
+    const ccToggle = document.getElementById('colorCycleToggle');
+    ccToggle.checked = (st.cycleEnabled === 1);
+    const buildColorSliders = () => {
+        const ceBody = document.getElementById('colorEngineeringBody');
+        ceBody.innerHTML = '';
+        if (st.cycleEnabled === 1) {
+            ceBody.appendChild(makeSliderCard("Primary Cycle Speed", "cycleNeb", 0.01, 0.5, false));
+            ceBody.appendChild(makeSliderCard("Highlight Cycle Speed", "cycleNrg", 0.01, 0.5, false));
+        } else {
+            const h1 = document.createElement('div'); h1.className = 'sub-heading'; h1.textContent = "Primary Layer RGB"; ceBody.appendChild(h1);
+            ceBody.appendChild(makeSliderCard("Red", "nebR", 0, 1, true));
+            ceBody.appendChild(makeSliderCard("Green", "nebG", 0, 1, true));
+            ceBody.appendChild(makeSliderCard("Blue", "nebB", 0, 1, true));
+
+            const cut1 = document.createElement('div'); cut1.className = 'live-preview-cutout'; ceBody.appendChild(cut1);
+
+            const h2 = document.createElement('div'); h2.className = 'sub-heading'; h2.textContent = "Foreground Energy RGB"; ceBody.appendChild(h2);
+            ceBody.appendChild(makeSliderCard("Red", "nrgR", 0, 1, true));
+            ceBody.appendChild(makeSliderCard("Green", "nrgG", 0, 1, true));
+            ceBody.appendChild(makeSliderCard("Blue", "nrgB", 0, 1, true));
+
+            if (mode >= 3) {
+                const cut2 = document.createElement('div'); cut2.className = 'live-preview-cutout'; ceBody.appendChild(cut2);
+                const h3 = document.createElement('div'); h3.className = 'sub-heading'; h3.textContent = "Touch & Accent RGB"; ceBody.appendChild(h3);
+                ceBody.appendChild(makeSliderCard("Red", "tchR", 0, 1, true));
+                ceBody.appendChild(makeSliderCard("Green", "tchG", 0, 1, true));
+                ceBody.appendChild(makeSliderCard("Blue", "tchB", 0, 1, true));
+            }
+        }
+        requestAnimationFrame(syncCardCutouts);
+    };
+    ccToggle.onchange = () => {
+        st.cycleEnabled = ccToggle.checked ? 1 : 0;
+        buildColorSliders();
+    };
+    buildColorSliders();
+
+    compileShaderForMode(mode);
+    requestAnimationFrame(syncCardCutouts);
+}
+
+// ==============================================================================
+// === 7. INTERACTIVE 360° PlasmaDial CANVAS ====================================
+// ==============================================================================
+const dialCanvas = document.getElementById('flowDialCanvas');
+const dCtx = dialCanvas.getContext('2d');
+const dialText = document.getElementById('flowDialText');
+const dialWrap = document.getElementById('flowDialWrap');
+
+function drawPlasmaDial(angleDeg) {
+    dialText.textContent = `${Math.round(angleDeg)}°`;
+    const w = dialCanvas.width, h = dialCanvas.height;
+    const cx = w * 0.5, cy = h * 0.5;
+    const radius = Math.min(w, h) * 0.5 - 24;
+    dCtx.clearRect(0, 0, w, h);
+
+    // Track Circle
+    dCtx.strokeStyle = 'rgba(255, 255, 255, 0.27)';
+    dCtx.lineWidth = 8;
+    dCtx.beginPath();
+    dCtx.arc(cx, cy, radius, 0, Math.PI * 2);
+    dCtx.stroke();
+
+    // Glowing Arrow Pointer
+    const rad = (angleDeg - 90.0) * (Math.PI / 180.0);
+    const tipX = cx + (radius + 16) * Math.cos(rad);
+    const tipY = cy + (radius + 16) * Math.sin(rad);
+    const baseX = cx + (radius - 10) * Math.cos(rad);
+    const baseY = cy + (radius - 10) * Math.sin(rad);
+    const halfW = 12;
+    const p2X = baseX + halfW * Math.cos(rad + Math.PI * 0.5);
+    const p2Y = baseY + halfW * Math.sin(rad + Math.PI * 0.5);
+    const p3X = baseX + halfW * Math.cos(rad - Math.PI * 0.5);
+    const p3Y = baseY + halfW * Math.sin(rad - Math.PI * 0.5);
+
+    dCtx.save();
+    dCtx.shadowColor = '#00E5FF';
+    dCtx.shadowBlur = 18;
+    dCtx.fillStyle = '#00E5FF';
+    dCtx.beginPath();
+    dCtx.moveTo(tipX, tipY);
+    dCtx.lineTo(p2X, p2Y);
+    dCtx.lineTo(p3X, p3Y);
+    dCtx.closePath();
+    dCtx.fill();
+    dCtx.shadowBlur = 0;
+    dCtx.strokeStyle = '#FFFFFF';
+    dCtx.lineWidth = 2;
+    dCtx.stroke();
+    dCtx.restore();
+}
+
+let isDraggingDial = false;
+function updateDialFromPointer(clientX, clientY) {
+    const rect = dialWrap.getBoundingClientRect();
+    const dx = clientX - (rect.left + rect.width * 0.5);
+    const dy = clientY - (rect.top + rect.height * 0.5);
+    let ang = Math.atan2(dy, dx) * (180.0 / Math.PI) + 90.0;
+    if (ang < 0) ang += 360.0;
+    modeState[activeEngineMode].flowAngle = ang;
+    drawPlasmaDial(ang);
+}
+dialWrap.addEventListener('pointerdown', (e) => { isDraggingDial = true; dialWrap.setPointerCapture(e.pointerId); updateDialFromPointer(e.clientX, e.clientY); });
+dialWrap.addEventListener('pointermove', (e) => { if (isDraggingDial) updateDialFromPointer(e.clientX, e.clientY); });
+dialWrap.addEventListener('pointerup', () => { isDraggingDial = false; });
+
+// ==============================================================================
+// === 8. EVENT WIRING: ENGINES, COLLAPSIBLE SECTIONS, MODALS & MULTI-TOUCH =====
+// ==============================================================================
+document.querySelectorAll('#secEngines .old-radio-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('#secEngines .old-radio-btn').forEach(b => b.classList.remove('selected'));
+        btn.classList.add('selected');
+        rebuildDashboardForMode(parseInt(btn.dataset.mode, 10));
+    });
+});
+
+document.querySelectorAll('.collapsible-header').forEach(hdr => {
+    hdr.addEventListener('click', () => {
+        const body = document.getElementById(hdr.dataset.target);
+        const chev = hdr.querySelector('.chevron');
+        const isOpen = !body.classList.contains('collapsed');
+        if (isOpen) {
+            spawnSectionExplosion(body.getBoundingClientRect());
+            body.classList.add('collapsed');
+            chev.textContent = '▼';
+        } else {
+            body.classList.remove('collapsed');
+            chev.textContent = '▲';
+        }
+        requestAnimationFrame(syncCardCutouts);
+    });
+});
+
+// Hide/Show UI Fullscreen Toggle
+const dashboardScroll = document.getElementById('dashboardScroll');
+const toggleUiFab = document.getElementById('toggleUiFab');
+toggleUiFab.addEventListener('click', () => {
+    const hidden = dashboardScroll.style.display === 'none';
+    dashboardScroll.style.display = hidden ? 'flex' : 'none';
+    toggleUiFab.textContent = hidden ? 'HIDE UI (FULLSCREEN TOUCH)' : 'SHOW DASHBOARD UI';
+    if (hidden) requestAnimationFrame(syncCardCutouts);
+});
+
+// Help & Guide Dialogs
+const helpModal = document.getElementById('helpModal');
+const modalTitle = document.getElementById('modalTitle');
+const modalBody = document.getElementById('modalBody');
+document.getElementById('guideBtn').addEventListener('click', () => {
+    modalTitle.textContent = "Quantum Plasma Guide";
+    modalBody.innerHTML = `
+        • <b>Quantum Engines:</b> Choose between Plasma, Liquid, and Vortex for free, or unlock Deep Space (Antimatter, Warp Tunnel, Entanglement) and Physics Formulas (Fusion Core / Boltzmann, Aurora / Alfvén, Reactor / Cherenkov) with Pro.<br><br>
+        • <b>5-Finger Multi-Touch & Lab:</b> Touch or drag inside any Live Preview cutout (or tap <b>HIDE UI</b> in the bottom right) to test 5-finger physics across all 9 engines.
+    `;
+    helpModal.style.display = 'flex';
+});
+document.addEventListener('click', (e) => {
+    const infoBtn = e.target.closest('.info-icon');
+    if (infoBtn && infoBtn.dataset.helpTitle) {
+        modalTitle.textContent = infoBtn.dataset.helpTitle;
+        modalBody.textContent = infoBtn.dataset.helpBody;
+        helpModal.style.display = 'flex';
+    }
+});
+document.getElementById('modalCloseBtn').addEventListener('click', () => { helpModal.style.display = 'none'; });
+helpModal.addEventListener('click', (e) => { if (e.target === helpModal) helpModal.style.display = 'none'; });
+
+// 5-Finger Multi-Touch & Cutout Touch Forwarding
+let isTouching = false;
+let touchFade = 0.0;
+let activeTouchCount = 0;
+const multiTouchArray = new Float32Array(10).fill(-1.0);
+let targetParallaxX = 0.0, targetParallaxY = 0.0, currentParallaxX = 0.0, currentParallaxY = 0.0;
+
+function setSinglePointer(clientX, clientY) {
+    activeTouchCount = 1;
+    isTouching = true;
+    multiTouchArray[0] = clientX / window.innerWidth;
+    multiTouchArray[1] = 1.0 - (clientY / window.innerHeight);
+    for (let k = 2; k < 10; k++) multiTouchArray[k] = -1.0;
+}
+
+window.addEventListener('pointerdown', (e) => {
+    if (e.target === glCanvas || e.target === dashboardScroll || e.target.classList.contains('live-preview-cutout')) {
+        setSinglePointer(e.clientX, e.clientY);
+    }
+});
+window.addEventListener('pointermove', (e) => {
+    targetParallaxX = ((e.clientX / window.innerWidth) - 0.5) * 0.22;
+    targetParallaxY = (0.5 - (e.clientY / window.innerHeight)) * 0.22;
+    if (isTouching && activeEngineMode !== 6) {
+        multiTouchArray[0] = e.clientX / window.innerWidth;
+        multiTouchArray[1] = 1.0 - (e.clientY / window.innerHeight);
+    }
+});
+window.addEventListener('pointerup', () => { isTouching = false; });
+
+window.addEventListener('touchstart', (e) => {
+    if (e.target === glCanvas || e.target === dashboardScroll || e.target.classList.contains('live-preview-cutout')) {
+        activeTouchCount = Math.min(e.touches.length, 5);
+        isTouching = activeTouchCount > 0;
+        for (let i = 0; i < 5; i++) {
+            if (i < activeTouchCount) {
+                multiTouchArray[i * 2] = e.touches[i].clientX / window.innerWidth;
+                multiTouchArray[i * 2 + 1] = 1.0 - (e.touches[i].clientY / window.innerHeight);
+            } else {
+                multiTouchArray[i * 2] = -1.0;
+                multiTouchArray[i * 2 + 1] = -1.0;
+            }
+        }
+    }
+}, { passive: true });
+window.addEventListener('touchmove', (e) => {
+    if (isTouching && activeEngineMode !== 6) {
+        activeTouchCount = Math.min(e.touches.length, 5);
+        for (let i = 0; i < activeTouchCount; i++) {
+            multiTouchArray[i * 2] = e.touches[i].clientX / window.innerWidth;
+            multiTouchArray[i * 2 + 1] = 1.0 - (e.touches[i].clientY / window.innerHeight);
+        }
+    }
+}, { passive: true });
+window.addEventListener('touchend', (e) => {
+    if (e.touches.length === 0) isTouching = false;
+}, { passive: true });
+
+// ==============================================================================
+// === 9. MAIN RENDER LOOP (MATCHES PreviewRenderer.onDrawFrame) ================
+// ==============================================================================
+function resizeGl() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    glCanvas.width = Math.floor(window.innerWidth * dpr);
+    glCanvas.height = Math.floor(window.innerHeight * dpr);
+    gl.viewport(0, 0, glCanvas.width, glCanvas.height);
+    syncCardCutouts();
+}
+window.addEventListener('resize', resizeGl);
+dashboardScroll.addEventListener('scroll', syncCardCutouts);
+
+rebuildDashboardForMode(6);
+resizeGl();
+
+let lastFrameMs = performance.now();
+function renderFrame(nowMs) {
+    const dt = Math.min((nowMs - lastFrameMs) / 1000.0, 0.05);
+    lastFrameMs = nowMs;
+
+    drawQuantumEnergyTitle(nowMs);
+    updateExplosions(nowMs);
+
+    touchFade = isTouching ? Math.min(1.0, touchFade + dt * 10.0) : Math.max(0.0, touchFade - dt * 1.0);
+    currentParallaxX += (targetParallaxX - currentParallaxX) * (5.0 * dt);
+    currentParallaxY += (targetParallaxY - currentParallaxY) * (5.0 * dt);
+
+    const st = modeState[activeEngineMode];
+    gl.useProgram(currentProgram);
+
+    const u = (name) => gl.getUniformLocation(currentProgram, name);
+    gl.uniform1f(u('u_Time'), ((nowMs - startTimeMs) / 1000.0) % 3600.0);
+    gl.uniform2f(u('u_Resolution'), glCanvas.width, glCanvas.height);
+    gl.uniform2f(u('u_ParallaxOffset'), currentParallaxX, currentParallaxY);
+    gl.uniform1i(u('u_RenderMode'), activeEngineMode);
+    gl.uniform1i(u('u_PowerMode'), 2);
+    gl.uniform1i(u('u_BaseShape'), st.baseShape);
+
+    gl.uniform1f(u('u_Speed'), st.speed);
+    gl.uniform1f(u('u_Complexity'), st.complexity);
+    gl.uniform1f(u('u_NebulaIntensity'), st.nebulaIntensity);
+    gl.uniform1f(u('u_NebulaSmoothness'), st.nebulaSmoothness);
+    gl.uniform1f(u('u_EnergyIntensity'), st.energyIntensity);
+    gl.uniform1f(u('u_EnergySmoothness'), st.energySmoothness);
+    gl.uniform1f(u('u_EnableColorCycle'), st.cycleEnabled);
+    gl.uniform1f(u('u_CycleSpeedNeb'), st.cycleNeb);
+    gl.uniform1f(u('u_CycleSpeedNrg'), st.cycleNrg);
+
+    // Exact FlowAngle & LightAngle conversion from NativePlasmaWallpaperService.kt
+    gl.uniform1f(u('u_FlowAngle'), (270.0 - st.flowAngle) * (Math.PI / 180.0));
+    gl.uniform1f(u('u_LightAngle'), (270.0 - st.lightAngle) * (Math.PI / 180.0));
+
+    gl.uniform1f(u('u_EnableChromaticShift'), st.shift);
+    gl.uniform1f(u('u_EnablePlasmaShatter'), st.shatter);
+    gl.uniform1f(u('u_EnableGlassCore'), st.glassCore);
+    gl.uniform1f(u('u_EnableDiscHighlight'), st.discHighlight);
+    gl.uniform1f(u('u_VortexCoreType'), st.vortexCoreType);
+    gl.uniform1f(u('u_VortexBump'), st.vortexBump);
+    gl.uniform1f(u('u_EnableLiquidGlow'), st.liquidGlow);
+    gl.uniform1f(u('u_EnableIridescence'), st.iridescence);
+    gl.uniform1f(u('u_EnableTeslaArc'), st.teslaArc);
+    gl.uniform1f(u('u_TeslaArcIntensity'), st.teslaArcInt);
+    gl.uniform1f(u('u_EnableBloom'), st.bloom);
+    gl.uniform1f(u('u_EnableAA'), st.aa);
+
+    gl.uniform3f(u('u_NebulaColor'), st.nebR, st.nebG, st.nebB);
+    gl.uniform3f(u('u_EnergyColor'), st.nrgR, st.nrgG, st.nrgB);
+    gl.uniform3f(u('u_TouchColor'), st.tchR, st.tchG, st.tchB);
+
+    const effectiveCount = touchFade > 0.001 ? activeTouchCount : 0;
+    gl.uniform2f(u('u_TouchPos'), effectiveCount > 0 ? multiTouchArray[0] : -1.0, effectiveCount > 0 ? multiTouchArray[1] : -1.0);
+    gl.uniform1i(u('u_TouchCount'), effectiveCount);
+    gl.uniform2fv(u('u_MultiTouchPos'), multiTouchArray);
+    gl.uniform1f(u('u_TouchIntensity'), st.touchIntensity * touchFade);
+    gl.uniform1f(u('u_TouchRadius'), st.touchRadius);
+
+    const posLoc = gl.getAttribLocation(currentProgram, 'a_Position');
+    gl.enableVertexAttribArray(posLoc);
+    gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+    requestAnimationFrame(renderFrame);
+}
+requestAnimationFrame(renderFrame);
+</script>
+</body>
+</html>
